@@ -10,6 +10,8 @@ import 'react-native-get-random-values';
 
 import { gcm } from '@noble/ciphers/aes';
 import { randomBytes } from '@noble/ciphers/webcrypto';
+import { pbkdf2 } from '@noble/hashes/pbkdf2';
+import { sha256 } from '@noble/hashes/sha2';
 import * as Crypto from 'expo-crypto';
 import { InteractionManager } from 'react-native';
 
@@ -26,6 +28,7 @@ interface EncryptedData {
 
 interface ICryptoManager {
   unlock(masterPassword: string, saltBase64: string): Promise<boolean>;
+  unlockLegacy(masterPassword: string, saltBase64: string): Promise<boolean>;
   lock(): void;
   isUnlocked(): boolean;
   encrypt(plaintext: string): Promise<EncryptedData | null>;
@@ -72,10 +75,27 @@ export class CryptoManager implements ICryptoManager {
   private key: Uint8Array | null = null;
 
   /**
-   * PBKDF2로 키 파생 (expo-crypto 사용)
-   * Web Crypto API와 호환되도록 동일한 반복 횟수 사용
+   * PBKDF2로 키 파생 (Standard - Web Crypto 호환)
    */
   private async deriveKey(password: string, salt: Uint8Array): Promise<Uint8Array> {
+    try {
+      // @noble/hashes pbkdf2 사용 (Sync이지만 호환성 보장)
+      const key = pbkdf2(sha256, password, salt, {
+        c: PBKDF2_ITERATIONS,
+        dkLen: 32
+      });
+      return key;
+    } catch (error) {
+      console.error('Key derivation failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * PBKDF2로 키 파생 (Legacy - 이전 버전 버그 호환용)
+   * 잘못 구현된 커스텀 루프 방식
+   */
+  private async deriveKeyLegacy(password: string, salt: Uint8Array): Promise<Uint8Array> {
     try {
       // expo-crypto의 PBKDF2 사용
       const key = await Crypto.digestStringAsync(
@@ -124,7 +144,7 @@ export class CryptoManager implements ICryptoManager {
   }
 
   /**
-   * 마스터 비밀번호로 잠금 해제
+   * 마스터 비밀번호로 잠금 해제 (Standard)
    */
   unlock(masterPassword: string, saltBase64: string): Promise<boolean> {
     return new Promise((resolve) => {
@@ -137,6 +157,27 @@ export class CryptoManager implements ICryptoManager {
             resolve(true);
           } catch (error) {
             console.error('Crypto unlock failed:', error);
+            resolve(false);
+          }
+        }, 100);
+      });
+    });
+  }
+
+  /**
+   * 마스터 비밀번호로 잠금 해제 (Legacy)
+   */
+  unlockLegacy(masterPassword: string, saltBase64: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      // UI 인터랙션이 완료된 후 실행
+      InteractionManager.runAfterInteractions(() => {
+        setTimeout(async () => {
+          try {
+            const salt = base64ToBuffer(saltBase64);
+            this.key = await this.deriveKeyLegacy(masterPassword, salt);
+            resolve(true);
+          } catch (error) {
+            console.error('Crypto unlock legacy failed:', error);
             resolve(false);
           }
         }, 100);
@@ -206,7 +247,8 @@ export class CryptoManager implements ICryptoManager {
           const result = uint8ArrayToString(decrypted);
           resolve(result || null);
         } catch (error) {
-          console.error('Decryption failed:', error);
+          // Decryption failed (wrong key or corrupted data).
+          // This is expected during migration checks.
           resolve(null);
         }
       });
