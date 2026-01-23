@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import LoginPage from './page';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
+import { createClient } from '@/lib/supabase/client';
 
 // Next.js router mock
 vi.mock('next/navigation', () => ({
@@ -34,13 +35,12 @@ describe('LoginPage - 인증 플로우 통합 테스트', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    (useRouter as any).mockReturnValue({
+    (useRouter as unknown as jest.Mock).mockReturnValue({
       push: mockPush,
       refresh: mockRefresh,
     });
 
-    const { createClient } = require('@/lib/supabase/client');
-    createClient.mockReturnValue({
+    (createClient as unknown as jest.Mock).mockReturnValue({
       auth: {
         signInWithPassword: mockSignInWithPassword,
       },

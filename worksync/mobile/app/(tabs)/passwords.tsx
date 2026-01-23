@@ -229,103 +229,143 @@ export default function PasswordsScreen() {
         return;
       }
 
-      const success = await cryptoManager.unlock(masterPassword, encryptionSalt);
-
-      if (success) {
-        try {
-          let verified = false;
-
-          // A. Verifier가 있는 경우 (최신 방식)
-          if (verifier) {
+      // 검증 헬퍼 함수
+      const verifyKey = async () => {
+        if (verifier) {
+          try {
             const vData = JSON.parse(verifier);
             const decrypted = await cryptoManager.decrypt(vData.encrypted, vData.iv);
-
-            if (decrypted === 'WORKSYNC_VERIFIER') {
-              verified = true;
-            }
-          } 
-          // B. Verifier가 없는 경우 (구버전 호환)
-          else {
+            return decrypted === 'WORKSYNC_VERIFIER';
+          } catch { return false; }
+        } else {
+          try {
             const { data: verifyData } = await supabase
               .from('passwords')
               .select('password_encrypted, iv')
               .eq('user_id', user.id)
               .limit(1)
               .maybeSingle();
-
-            if (verifyData) {
-              const decrypted = await cryptoManager.decrypt(
-                verifyData.password_encrypted,
-                verifyData.iv
-              );
-
-              if (decrypted !== null) {
-                verified = true;
-              }
-            } else {
-              // 저장된 비밀번호가 없으면 통과
-              verified = true;
-            }
             
-            // 검증 성공! Verifier 생성 및 저장 (자동 마이그레이션)
-            if (verified) {
-              const newVerifier = await cryptoManager.encrypt('WORKSYNC_VERIFIER');
-              if (newVerifier) {
-                await supabase
-                  .from('profiles')
-                  .update({ verifier: JSON.stringify(newVerifier) })
-                  .eq('id', user.id);
-                
-                setVerifier(JSON.stringify(newVerifier));
-              }
-            }
-          }
-
-          if (verified) {
-            // 최종 성공
-            setIsLocked(false);
-            setShowUnlockModal(false);
-            setMasterPassword('');
-            setConfirmMasterPassword('');
-            // 성공 시 Rate Limit 초기화
-            await SecureStore.deleteItemAsync('rate_limit_master_pw');
-          } else {
-            throw new Error('Verification failed');
-          }
-        } catch (error) {
-          // 검증 실패 로직
-          cryptoManager.lock();
-          Alert.alert('오류', '비밀번호가 올바르지 않습니다.');
-          
-          // 실패 횟수 기록
-          try {
-            const rateLimitStr = await SecureStore.getItemAsync('rate_limit_master_pw');
-            let attempts = 0;
-            if (rateLimitStr) {
-              attempts = JSON.parse(rateLimitStr).attempts || 0;
-            }
-            
-            attempts++;
-            
-            if (attempts >= 5) {
-              await SecureStore.setItemAsync('rate_limit_master_pw', JSON.stringify({
-                attempts,
-                blockedUntil: Date.now() + 300000 // 5분 차단
-              }));
-              Alert.alert('경고', '비밀번호 입력 5회 실패로 5분간 차단됩니다.');
-            } else {
-              await SecureStore.setItemAsync('rate_limit_master_pw', JSON.stringify({
-                attempts,
-                blockedUntil: null
-              }));
-              Alert.alert('오류', `비밀번호가 틀렸습니다. (남은 기회: ${5 - attempts}회)`);
-            }
-          } catch (e) {
-            console.error('Rate limit save error', e);
-          }
+            if (!verifyData) return true; // 데이터 없으면 통과
+            const decrypted = await cryptoManager.decrypt(verifyData.password_encrypted, verifyData.iv);
+            return decrypted !== null;
+          } catch { return false; }
         }
+      };
+
+      // 1. Standard 방식 시도
+      await cryptoManager.unlock(masterPassword, encryptionSalt);
+      let isVerified = await verifyKey();
+      let migrationNeeded = false;
+
+      // 2. Legacy 방식 시도 (Standard 실패 시)
+      if (!isVerified) {
+        console.log('Standard unlock failed, trying legacy...');
+        await cryptoManager.unlockLegacy(masterPassword, encryptionSalt);
+        isVerified = await verifyKey();
+        if (isVerified) {
+          migrationNeeded = true;
+        }
+      }
+
+      if (isVerified) {
+        if (migrationNeeded) {
+          try {
+            // 마이그레이션 실행
+            Alert.alert('보안 업데이트', 'PC 버전과의 호환성을 위해 암호화 방식을 업데이트합니다. 잠시만 기다려주세요.');
+            
+            // 1. 기존 데이터 복호화 (Legacy Key 상태)
+            const { data: allPasswords } = await supabase
+              .from('passwords')
+              .select('*')
+              .eq('user_id', user.id);
+            
+            const decryptedList = [];
+            if (allPasswords) {
+              for (const p of allPasswords) {
+                const plain = await cryptoManager.decrypt(p.password_encrypted, p.iv);
+                if (plain) decryptedList.push({ ...p, plain });
+              }
+            }
+
+            // 2. Standard Key로 전환
+            await cryptoManager.unlock(masterPassword, encryptionSalt);
+
+            // 3. 재암호화 및 저장
+            for (const item of decryptedList) {
+              const enc = await cryptoManager.encrypt(item.plain);
+              if (enc) {
+                await supabase.from('passwords').update({
+                  password_encrypted: enc.encrypted,
+                  iv: enc.iv
+                }).eq('id', item.id);
+              }
+            }
+
+            // 4. Verifier 업데이트
+            const newVerifier = await cryptoManager.encrypt('WORKSYNC_VERIFIER');
+            if (newVerifier) {
+              const vStr = JSON.stringify(newVerifier);
+              await supabase.from('profiles').update({ verifier: vStr }).eq('id', user.id);
+              setVerifier(vStr);
+            }
+            
+            console.log('Migration completed');
+          } catch (e) {
+            console.error('Migration failed', e);
+            Alert.alert('오류', '보안 업데이트 중 오류가 발생했습니다. 나중에 다시 시도해주세요.');
+            // 안전하게 Legacy로 복귀 시도
+            await cryptoManager.unlockLegacy(masterPassword, encryptionSalt);
+          }
+        } else {
+            // Verifier가 없는 구버전 -> Verifier 생성 (Standard Key로)
+            if (!verifier) {
+               const newVerifier = await cryptoManager.encrypt('WORKSYNC_VERIFIER');
+               if (newVerifier) {
+                 const vStr = JSON.stringify(newVerifier);
+                 await supabase.from('profiles').update({ verifier: vStr }).eq('id', user.id);
+                 setVerifier(vStr);
+               }
+            }
+        }
+
+        // 성공 처리
+        setIsLocked(false);
+        setShowUnlockModal(false);
+        setMasterPassword('');
+        setConfirmMasterPassword('');
+        await SecureStore.deleteItemAsync('rate_limit_master_pw');
       } else {
-        Alert.alert('오류', '잠금 해제에 실패했습니다. 마스터 비밀번호를 확인해주세요.');
+        // 실패 처리
+        cryptoManager.lock();
+        Alert.alert('오류', '비밀번호가 올바르지 않습니다.');
+
+        // 실패 횟수 기록
+        try {
+          const rateLimitStr = await SecureStore.getItemAsync('rate_limit_master_pw');
+          let attempts = 0;
+          if (rateLimitStr) {
+            attempts = JSON.parse(rateLimitStr).attempts || 0;
+          }
+          
+          attempts++;
+          
+          if (attempts >= 5) {
+            await SecureStore.setItemAsync('rate_limit_master_pw', JSON.stringify({
+              attempts,
+              blockedUntil: Date.now() + 300000 // 5분 차단
+            }));
+            Alert.alert('경고', '비밀번호 입력 5회 실패로 5분간 차단됩니다.');
+          } else {
+            await SecureStore.setItemAsync('rate_limit_master_pw', JSON.stringify({
+              attempts,
+              blockedUntil: null
+            }));
+            Alert.alert('오류', `비밀번호가 틀렸습니다. (남은 기회: ${5 - attempts}회)`);
+          }
+        } catch (e) {
+          console.error('Rate limit save error', e);
+        }
       }
     }
 
