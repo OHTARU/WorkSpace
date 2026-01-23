@@ -1,0 +1,61 @@
+{
+  "expo": {
+    "name": "WorkSync Mobile",
+    "slug": "worksync-mobile-2026",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "worksync",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#3B82F6"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.worksync.app",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "비밀번호 조회 시 생체 인증에 사용됩니다.",
+        "NSPhotoLibraryUsageDescription": "사진과 동영상을 클립보드에 추가하기 위해 갤러리 접근 권한이 필요합니다.",
+        "NSPhotoLibraryAddUsageDescription": "미디어를 갤러리에 저장하기 위해 권한이 필요합니다.",
+        "NSCameraUsageDescription": "사진과 동영상을 촬영하여 클립보드에 추가하기 위해 카메라 접근 권한이 필요합니다.",
+        "NSMicrophoneUsageDescription": "동영상 촬영 시 오디오 녹음을 위해 마이크 접근 권한이 필요합니다."
+      }
+    },
+    "android": {
+      "package": "com.worksync.app",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#3B82F6"
+      },
+      "permissions": ["USE_BIOMETRIC", "USE_FINGERPRINT", "CAMERA", "READ_EXTERNAL_STORAGE", "WRITE_EXTERNAL_STORAGE", "READ_MEDIA_IMAGES", "READ_MEDIA_VIDEO", "READ_MEDIA_AUDIO", "INTERNET", "ACCESS_NETWORK_STATE"]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-local-authentication",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "사진과 동영상을 클립보드에 추가할 수 있습니다.",
+          "cameraPermission": "카메라로 사진과 동영상을 촬영할 수 있습니다."
+        }
+      ],
+      "expo-av",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "미디어를 갤러리에 저장할 수 있습니다.",
+          "savePhotosPermission": "미디어를 갤러리에 저장할 수 있습니다.",
+          "isAccessMediaLocationEnabled": true
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
