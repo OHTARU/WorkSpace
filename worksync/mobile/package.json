@@ -4,6 +4,10 @@
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
+    "start:dev": "copy .env.dev .env && expo start",
+    "start:prod": "copy .env.prod .env && expo start",
+    "env:dev": "copy .env.dev .env",
+    "env:prod": "copy .env.prod .env",
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web"
@@ -11,6 +15,7 @@
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
     "@noble/ciphers": "^1.0.0",
+    "@react-native-community/netinfo": "^11.4.1",
     "@supabase/supabase-js": "^2.39.0",
     "base-64": "^1.0.0",
     "expo": "^54.0.31",
