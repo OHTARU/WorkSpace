@@ -221,19 +221,26 @@ export default function PasswordsScreen() {
       .eq('id', user.id)
       .maybeSingle();
 
+    console.log('[DEBUG] Profile query result:', {
+      profile: profile ? 'EXISTS' : 'NULL',
+      encryption_salt: profile?.encryption_salt || 'NULL',
+      verifier: profile?.verifier ? 'EXISTS' : 'NULL',
+      error: error?.message || 'NONE'
+    });
+
     if (error) {
       console.error('Profile fetch error:', error);
-      Alert.alert('디버그 오류', `프로필 조회 실패: ${error.message}`);
     }
 
     if (profile?.encryption_salt) {
-    console.log('[DEBUG] Profile data:', { encryption_salt: profile?.encryption_salt ? 'EXISTS' : 'NULL', verifier: profile?.verifier ? 'EXISTS' : 'NULL' });
       setEncryptionSalt(profile.encryption_salt);
       setVerifier(profile.verifier);
       setIsFirstTime(false);
+      console.log('[DEBUG] isFirstTime = false');
     } else {
       // salt가 없으면 처음 사용자
       setIsFirstTime(true);
+      console.log('[DEBUG] isFirstTime = true (no salt found)');
     }
 
     setLoading(false);
