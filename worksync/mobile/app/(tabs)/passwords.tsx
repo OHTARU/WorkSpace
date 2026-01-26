@@ -40,14 +40,14 @@ interface Password {
 // [최적화 1] PasswordItem 컴포넌트 분리 (memoization)
 // 리스트 렌더링 성능을 위해 개별 아이템을 별도 컴포넌트로 분리하고 memo로 감쌉니다.
 // -----------------------------------------------------------------------------
-const PasswordItem = memo(({ 
-  item, 
-  isVisible, 
-  decryptedPassword, 
-  onToggleVisibility, 
-  onCopy, 
-  onEdit, 
-  onDelete 
+const PasswordItem = memo(({
+  item,
+  isVisible,
+  decryptedPassword,
+  onToggleVisibility,
+  onCopy,
+  onEdit,
+  onDelete
 }: {
   item: Password,
   isVisible: boolean,
@@ -59,7 +59,19 @@ const PasswordItem = memo(({
 }) => {
   const copyToClipboard = async (text: string, label: string) => {
     await Clipboard.setStringAsync(text);
-    Alert.alert('복사됨', `${label}이(가) 클립보드에 복사되었습니다.`);
+    Alert.alert('복사됨', `${label}이(가) 클립보드에 복사되었습니다.\n\n보안을 위해 30초 후 자동으로 삭제됩니다.`);
+
+    // 30초 후 클립보드 자동 삭제 (보안 강화)
+    setTimeout(async () => {
+      try {
+        const currentClipboard = await Clipboard.getStringAsync();
+        if (currentClipboard === text) {
+          await Clipboard.setStringAsync('');
+        }
+      } catch (error) {
+        // 클립보드 접근 실패 시 무시
+      }
+    }, 30000);
   };
 
   return (
@@ -706,7 +718,20 @@ export default function PasswordsScreen() {
 
     if (passwordToCopy) {
       await Clipboard.setStringAsync(passwordToCopy);
-      Alert.alert('복사됨', '비밀번호가 클립보드에 복사되었습니다.');
+      Alert.alert('복사됨', '비밀번호가 클립보드에 복사되었습니다.\n\n보안을 위해 30초 후 자동으로 삭제됩니다.');
+
+      // 30초 후 클립보드 자동 삭제 (보안 강화)
+      setTimeout(async () => {
+        try {
+          // 현재 클립보드 내용 확인 후 동일하면 삭제
+          const currentClipboard = await Clipboard.getStringAsync();
+          if (currentClipboard === passwordToCopy) {
+            await Clipboard.setStringAsync('');
+          }
+        } catch (error) {
+          // 클립보드 접근 실패 시 무시
+        }
+      }, 30000);
     } else {
       Alert.alert('오류', '비밀번호 복호화에 실패했습니다.');
     }

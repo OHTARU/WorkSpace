@@ -141,28 +141,38 @@ export default function ClipboardPage() {
     if (error) {
       toast.error('클립보드 목록을 불러오는데 실패했습니다.');
     } else {
-      // Signed URL 생성
-      const signedData = await Promise.all((data || []).map(async (item) => {
-        if (item.media_url && (item.content_type === 'image' || item.content_type === 'video')) {
-          const { data: signed } = await supabase.storage
-            .from('clipboard-media')
-            .createSignedUrl(item.media_url, 3600); // 1시간 유효
-          
-          if (signed) {
-            // 원본 경로(path)는 유지하고, 표시용 URL만 교체하거나 별도 필드로 관리
-            // 여기서는 표시를 위해 media_url을 교체하지만, 삭제 시에는 원본 경로가 필요함.
-            // 하지만 클라이언트 상태에서만 교체하므로 삭제 함수에서 주의 필요.
-            // 더 안전한 방법: path는 그대로 두고 signedUrl 속성 추가 (타입 수정 필요하지만 여기서는 media_url 덮어쓰기 후 삭제 시 역변환/또는 path 별도 저장 등 고려)
-            // 간단히: media_url을 signed url로 덮어쓰되, 삭제 시에는 URL에서 경로 추출하거나
-            // 애초에 DB에 path만 저장하기로 했으므로, 여기서 덮어쓰면 삭제 시 path를 알 수 없음?
-            // 아니, Signed URL은 복잡함.
-            // 해결책: item에 original_path 속성을 추가하여 상태 저장.
-            return { ...item, original_path: item.media_url, media_url: signed.signedUrl };
+      // Signed URL 생성 (에러 핸들링 포함)
+      try {
+        const signedData = await Promise.all((data || []).map(async (item) => {
+          if (item.media_url && (item.content_type === 'image' || item.content_type === 'video')) {
+            try {
+              const { data: signed, error: signedError } = await supabase.storage
+                .from('clipboard-media')
+                .createSignedUrl(item.media_url, 3600); // 1시간 유효
+
+              if (signedError) {
+                logger.error('Failed to create signed URL:', signedError);
+                return { ...item, original_path: item.media_url };
+              }
+
+              if (signed) {
+                return { ...item, original_path: item.media_url, media_url: signed.signedUrl };
+              }
+            } catch (urlError) {
+              logger.error('Error creating signed URL for item:', urlError);
+              return { ...item, original_path: item.media_url };
+            }
           }
-        }
-        return { ...item, original_path: item.media_url };
-      }));
-      setClipboards(signedData);
+          return { ...item, original_path: item.media_url };
+        }));
+        setClipboards(signedData);
+      } catch (signedUrlError) {
+        logger.error('Failed to process signed URLs:', signedUrlError);
+        // 실패 시에도 원본 데이터는 표시
+        const fallbackData = (data || []).map(item => ({ ...item, original_path: item.media_url }));
+        setClipboards(fallbackData);
+        toast.error('일부 미디어를 불러오는데 실패했습니다.');
+      }
     }
     setLoading(false);
   };
@@ -282,25 +292,36 @@ export default function ClipboardPage() {
     const clip = deleteTarget;
     setDeleteTarget(null);
 
-    // 미디어가 있으면 Storage에서도 삭제
-    // original_path가 있으면 그것을 사용 (fetch에서 주입함), 없으면 media_url 사용
-    const path = (clip as any).original_path || clip.media_url;
-    
-    if (path) {
-        // 기존 Public URL 방식일 경우 파싱, 아니면 그대로 사용
-        const storagePath = path.includes('/clipboard-media/') 
-            ? path.split('/clipboard-media/')[1] 
-            : path;
-            
-        await supabase.storage.from('clipboard-media').remove([storagePath]);
-    }
+    try {
+      // 1. Storage에서 먼저 삭제 (미디어가 있는 경우)
+      const path = (clip as any).original_path || clip.media_url;
 
-    const { error } = await supabase.from('clipboards').delete().eq('id', clip.id);
+      if (path) {
+        const storagePath = path.includes('/clipboard-media/')
+          ? path.split('/clipboard-media/')[1]
+          : path;
 
-    if (error) {
-      toast.error('삭제에 실패했습니다.');
-    } else {
+        const { error: storageError } = await supabase.storage
+          .from('clipboard-media')
+          .remove([storagePath]);
+
+        if (storageError) {
+          logger.error('Storage delete failed:', storageError);
+          // Storage 삭제 실패해도 계속 진행 (고아 파일 정리는 나중에)
+        }
+      }
+
+      // 2. DB 레코드 삭제
+      const { error } = await supabase.from('clipboards').delete().eq('id', clip.id);
+
+      if (error) {
+        throw error;
+      }
+
       toast.success('삭제되었습니다.');
+    } catch (error) {
+      logger.error('Delete failed:', error);
+      toast.error('삭제에 실패했습니다.');
     }
   };
 
@@ -343,7 +364,18 @@ export default function ClipboardPage() {
       toast.loading('다운로드 중...', { id: 'download' });
 
       const response = await fetch(clip.media_url);
+
+      // 응답 상태 검증
+      if (!response.ok) {
+        throw new Error(`Download failed: ${response.status} ${response.statusText}`);
+      }
+
       const blob = await response.blob();
+
+      // blob 크기 검증
+      if (blob.size === 0) {
+        throw new Error('Downloaded file is empty');
+      }
 
       // 파일명 생성
       const urlParts = clip.media_url.split('.');

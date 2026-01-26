@@ -80,21 +80,38 @@ export default function ClipboardScreen() {
     if (error) {
       Alert.alert('오류', '목록을 불러오는데 실패했습니다.');
     } else {
-        // Signed URL 생성
+      // Signed URL 생성 (에러 핸들링 포함)
+      try {
         const signedData = await Promise.all((data || []).map(async (item) => {
-            if (item.media_url && (item.content_type === 'image' || item.content_type === 'video')) {
-              const { data: signed } = await supabase.storage
+          if (item.media_url && (item.content_type === 'image' || item.content_type === 'video')) {
+            try {
+              const { data: signed, error: signedError } = await supabase.storage
                 .from('clipboard-media')
                 .createSignedUrl(item.media_url, 3600);
-              
+
+              if (signedError) {
+                console.error('Failed to create signed URL:', signedError);
+                return { ...item, original_path: item.media_url };
+              }
+
               if (signed) {
-                // original_path 추가하여 삭제 시 사용
                 return { ...item, original_path: item.media_url, media_url: signed.signedUrl };
               }
+            } catch (urlError) {
+              console.error('Error creating signed URL for item:', urlError);
+              return { ...item, original_path: item.media_url };
             }
-            return { ...item, original_path: item.media_url };
-          }));
-      setClipboards(signedData);
+          }
+          return { ...item, original_path: item.media_url };
+        }));
+        setClipboards(signedData);
+      } catch (signedUrlError) {
+        console.error('Failed to process signed URLs:', signedUrlError);
+        // 실패 시에도 원본 데이터는 표시
+        const fallbackData = (data || []).map(item => ({ ...item, original_path: item.media_url }));
+        setClipboards(fallbackData);
+        Alert.alert('경고', '일부 미디어를 불러오는데 실패했습니다.');
+      }
     }
     setLoading(false);
     setRefreshing(false);
