@@ -164,7 +164,7 @@ export async function encryptWebCrypto(
   const encryptedBuffer = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv },
     key,
-    stringToUint8Array(plaintext)
+    stringToUint8Array(plaintext) as unknown as BufferSource
   );
 
   return {
@@ -187,7 +187,7 @@ export async function decryptWebCrypto(
   const decryptedBuffer = await crypto.subtle.decrypt(
     { name: 'AES-GCM', iv },
     key,
-    encryptedBuffer
+    encryptedBuffer as unknown as BufferSource
   );
 
   return uint8ArrayToString(new Uint8Array(decryptedBuffer));
