@@ -21,8 +21,8 @@ export const SALT_LENGTH = 32;
 /** IV 길이 (GCM 권장: 12바이트) */
 export const IV_LENGTH = 12;
 
-/** PBKDF2 반복 횟수 (보안 강화) */
-export const PBKDF2_ITERATIONS = 100000;
+/** PBKDF2 반복 횟수 (OWASP 2023 권장: 310,000 for SHA-256) */
+export const PBKDF2_ITERATIONS = 310000;
 
 /** AES 키 길이 (256-bit) */
 export const AES_KEY_LENGTH = 256;

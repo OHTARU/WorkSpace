@@ -28,6 +28,11 @@ interface Clipboard {
   file_size: number | null;
 }
 
+/** Clipboard with original_path for signed URL handling */
+interface ClipboardWithPath extends Clipboard {
+  original_path?: string;
+}
+
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ALLOWED_TYPES = [
   'image/jpeg', 'image/png', 'image/gif', 'image/webp',
@@ -36,14 +41,14 @@ const ALLOWED_TYPES = [
 const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.mp4', '.mov', '.webm'];
 
 export default function ClipboardPage() {
-  const [clipboards, setClipboards] = useState<Clipboard[]>([]);
+  const [clipboards, setClipboards] = useState<ClipboardWithPath[]>([]);
   const [loading, setLoading] = useState(true);
   const [newContent, setNewContent] = useState('');
   const [contentType, setContentType] = useState('text');
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<Clipboard | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ClipboardWithPath | null>(null);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [limitInfo, setLimitInfo] = useState({ current: 0, limit: 0 });
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -294,7 +299,7 @@ export default function ClipboardPage() {
 
     try {
       // 1. Storage에서 먼저 삭제 (미디어가 있는 경우)
-      const path = (clip as any).original_path || clip.media_url;
+      const path = clip.original_path || clip.media_url;
 
       if (path) {
         const storagePath = path.includes('/clipboard-media/')

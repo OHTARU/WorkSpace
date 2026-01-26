@@ -38,6 +38,7 @@ import { SkeletonProject, SkeletonList } from '@/components/Skeleton';
 import { Modal } from '@/components/Modal';
 import { UpgradeModal } from '@/components/subscription/UpgradeModal';
 import { UsageWarningBanner } from '@/components/subscription/UsageWarningBanner';
+import { logger } from '@/lib/logger';
 
 const PERIOD_LABELS: Record<TodoPeriod, string> = {
   monthly: '월간',
@@ -189,10 +190,10 @@ export default function TodosPage() {
         .on('postgres_changes', { event: '*', schema: 'public', table: 'todos', filter: `user_id=eq.${userId}` }, fetchData)
         .subscribe((status, err) => {
           if (status === 'SUBSCRIBED') {
-            console.log('Todos realtime connected');
+            logger.log('Todos realtime connected');
           }
           if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-            console.error('Todos realtime subscription error:', err);
+            logger.error('Todos realtime subscription error:', err);
             // 재연결 시도
             setTimeout(() => {
               supabase.removeChannel(channel);
