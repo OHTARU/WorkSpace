@@ -1,8 +1,8 @@
 # WorkSync 프로젝트 현황 및 향후 계획
 
-**작성일**: 2026년 1월 23일
+**작성일**: 2026년 1월 26일
 **프로젝트**: WorkSync
-**상태**: 핵심 보안/동기화 기능 구현 완료, 구독 시스템 준비 완료
+**상태**: 핵심 보안/동기화 기능 구현 완료, 구독 시스템 UI 적용 완료
 
 ---
 
@@ -27,6 +27,23 @@
 ### 1.4 데이터베이스 안정화
 - **초기화 스크립트**: `supabase/migrations/006_reset_database.sql` 작성. DB 테이블, RLS 정책, 트리거, 기본 데이터를 한 번에 완벽하게 재설정하는 스크립트 제공.
 
+### 1.5 구독 제한 UI 적용 (1월 26일 추가)
+- **웹 컴포넌트 생성**:
+  - `UpgradeModal`: 한도 도달 시 업그레이드 유도 모달 (UsageBar 시각화 포함)
+  - `UsageWarningBanner`: 80% 사용 시 노란색, 100% 사용 시 빨간색 경고 배너
+- **모바일 훅 생성**: `useSubscription` 훅을 모바일에도 구현하여 웹과 동일한 API 제공
+- **기능별 제한 적용**:
+  | 기능 | Free 플랜 한도 | 적용 위치 |
+  |------|---------------|----------|
+  | URLs | 50개 | 웹 URLs 페이지 |
+  | Passwords | 20개 | 웹/모바일 Passwords 페이지 |
+  | Clipboards | 100개 | 웹/모바일 Clipboard 페이지 |
+  | Projects | 5개 | 웹/모바일 Todos 페이지 |
+- **동작 방식**:
+  - 웹: 한도 도달 시 `UpgradeModal` 표시, 80% 이상 사용 시 `UsageWarningBanner` 경고
+  - 모바일: 한도 도달 시 `Alert.alert()`로 업그레이드 유도 메시지 표시
+  - Pro/Business 플랜: 모든 제한 해제 (무제한, limit=-1)
+
 ---
 
 ## 2. 구독 시스템 (구현 완료)
@@ -44,15 +61,22 @@
 ### 3.1 모바일 (Mobile)
 | 파일 경로 | 변경 내용 |
 |----------|----------|
-| `app/(tabs)/passwords.tsx` | 마스터 비밀번호 검증/저장 로직 개선, Rate Limit 적용, UI 개선 |
+| `app/(tabs)/passwords.tsx` | 마스터 비밀번호 검증/저장 로직 개선, Rate Limit 적용, UI 개선, **구독 제한 체크 추가** |
 | `app/(tabs)/urls.tsx` | 터치 영역 분리, 복사 기능 추가 |
-| `app/(tabs)/clipboard.tsx` | 갤러리 직접 저장(`expo-media-library`) 적용 |
+| `app/(tabs)/clipboard.tsx` | 갤러리 직접 저장(`expo-media-library`) 적용, **구독 제한 체크 추가** |
+| `app/(tabs)/todos.tsx` | **구독 제한 체크 추가 (프로젝트 생성 시)** |
 | `src/utils/crypto.ts` | 암호화 폴리필(`react-native-get-random-values`) 추가로 크래시 해결 |
+| `src/hooks/useSubscription.ts` | **[신규]** 모바일용 구독 훅 (checkLimit, hasFeature, isPro 등) |
 
 ### 3.2 웹 (Web)
 | 파일 경로 | 변경 내용 |
 |----------|----------|
-| `app/(dashboard)/dashboard/passwords/page.tsx` | `verifier` 로직 적용, Realtime 구독 추가, 이메일 누락 버그 수정 |
+| `app/(dashboard)/dashboard/passwords/page.tsx` | `verifier` 로직 적용, Realtime 구독 추가, 이메일 누락 버그 수정, **구독 제한 체크 추가** |
+| `app/(dashboard)/dashboard/urls/page.tsx` | **구독 제한 체크 추가, UsageWarningBanner 적용** |
+| `app/(dashboard)/dashboard/clipboard/page.tsx` | **구독 제한 체크 추가, UsageWarningBanner 적용** |
+| `app/(dashboard)/dashboard/todos/page.tsx` | **구독 제한 체크 추가, UsageWarningBanner 적용** |
+| `components/subscription/UpgradeModal.tsx` | **[신규]** 한도 도달 시 업그레이드 유도 모달 |
+| `components/subscription/UsageWarningBanner.tsx` | **[신규]** 사용량 경고 배너 (80%/100%) |
 
 ### 3.3 데이터베이스
 | 파일 경로 | 설명 |
@@ -67,11 +91,11 @@
 - [ ] **DB 초기화**: Supabase SQL Editor에서 `006_reset_database.sql` 실행하여 DB 구조 확정.
 - [ ] **Stripe 설정**: Stripe 대시보드에서 상품/가격 생성 및 API 키 발급, 환경변수 적용.
 
-### 4.2 기능 제한 적용 (구독 모델 연동)
-현재 구독 시스템 로직(`useSubscription`)은 구현되어 있으나, 실제 UI에서 제한을 거는 부분은 미적용 상태입니다.
-- [ ] **URL 페이지**: 무료 플랜 50개 초과 시 추가 차단 로직 연결.
-- [ ] **비밀번호 페이지**: 무료 플랜 20개 초과 시 추가 차단 로직 연결.
-- [ ] **프로젝트/클립보드**: 각 제한 수치 적용.
+### 4.2 기능 제한 적용 (구독 모델 연동) ✅ 완료
+~~현재 구독 시스템 로직(`useSubscription`)은 구현되어 있으나, 실제 UI에서 제한을 거는 부분은 미적용 상태입니다.~~
+- [x] **URL 페이지**: 무료 플랜 50개 초과 시 추가 차단 로직 연결.
+- [x] **비밀번호 페이지**: 무료 플랜 20개 초과 시 추가 차단 로직 연결.
+- [x] **프로젝트/클립보드**: 각 제한 수치 적용.
 
 ### 4.3 광고 수익화 (2순위)
 - [ ] **AdMob 연동**: 모바일 앱 내 배너/전면 광고 삽입.

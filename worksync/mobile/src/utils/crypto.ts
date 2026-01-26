@@ -1,15 +1,17 @@
 import 'react-native-get-random-values';
+import 'text-encoding';
 /**
  * 모바일용 AES-256-GCM 암호화/복호화 유틸리티
  *
- * @noble/ciphers를 사용하여 Web Crypto API와 호환되는
- * AES-256-GCM 암호화를 제공합니다.
+ * @noble/ciphers와 @noble/hashes를 사용하여 순수 JS 환경(Expo Go)에서도
+ * 동작하는 AES-256-GCM 암호화 및 PBKDF2 키 파생을 제공합니다.
  *
  * shared/utils/crypto.ts의 공통 상수와 인터페이스를 사용합니다.
  */
 
 import { gcm } from '@noble/ciphers/aes';
-import { randomBytes } from '@noble/ciphers/webcrypto';
+import { pbkdf2 } from '@noble/hashes/pbkdf2.js';
+import { sha256 } from '@noble/hashes/sha2.js';
 import * as Crypto from 'expo-crypto';
 import { InteractionManager } from 'react-native';
 
@@ -26,6 +28,7 @@ interface EncryptedData {
 
 interface ICryptoManager {
   unlock(masterPassword: string, saltBase64: string): Promise<boolean>;
+  unlockLegacy(masterPassword: string, saltBase64: string): Promise<boolean>;
   lock(): void;
   isUnlocked(): boolean;
   encrypt(plaintext: string): Promise<EncryptedData | null>;
@@ -37,20 +40,11 @@ interface ICryptoManager {
 // 공통 유틸리티 함수 (shared와 동일)
 // ============================================
 
-function stringToUint8Array(str: string): Uint8Array {
-  const encoder = new TextEncoder();
-  return encoder.encode(str);
-}
-
-function uint8ArrayToString(arr: Uint8Array): string {
-  const decoder = new TextDecoder();
-  return decoder.decode(arr);
-}
-
-function bufferToBase64(buffer: Uint8Array): string {
+function bufferToBase64(buffer: Uint8Array | ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
   let binary = '';
-  for (let i = 0; i < buffer.byteLength; i++) {
-    binary += String.fromCharCode(buffer[i]);
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
   }
   return btoa(binary);
 }
@@ -65,17 +59,33 @@ function base64ToBuffer(base64: string): Uint8Array {
 }
 
 // ============================================
-// 모바일 전용 CryptoManager
+// 모바일 전용 CryptoManager (JS Implementation)
 // ============================================
 
 export class CryptoManager implements ICryptoManager {
   private key: Uint8Array | null = null;
 
   /**
-   * PBKDF2로 키 파생 (expo-crypto 사용)
-   * Web Crypto API와 호환되도록 동일한 반복 횟수 사용
+   * PBKDF2로 키 파생 (Standard - JS)
+   * @noble/hashes 사용
    */
   private async deriveKey(password: string, salt: Uint8Array): Promise<Uint8Array> {
+    try {
+      // pbkdf2는 동기적으로 동작하지만 InteractionManager로 감싸서 실행되므로
+      // UI 블로킹을 최소화할 수 있음.
+      const keyBuffer = pbkdf2(sha256, password, salt, { c: PBKDF2_ITERATIONS, dkLen: 32 });
+      return keyBuffer;
+    } catch (error) {
+      console.error('Key derivation failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * PBKDF2로 키 파생 (Legacy - 이전 버전 버그 호환용)
+   * 잘못 구현된 커스텀 루프 방식 (속도 개선 불가능, 마이그레이션용)
+   */
+  private async deriveKeyLegacy(password: string, salt: Uint8Array): Promise<Uint8Array> {
     try {
       // expo-crypto의 PBKDF2 사용
       const key = await Crypto.digestStringAsync(
@@ -119,16 +129,17 @@ export class CryptoManager implements ICryptoManager {
    * 랜덤 Salt 생성 (Base64 문자열 반환)
    */
   generateSalt(): string {
-    const salt = randomBytes(SALT_LENGTH);
+    const salt = new Uint8Array(SALT_LENGTH);
+    crypto.getRandomValues(salt);
     return bufferToBase64(salt);
   }
 
   /**
-   * 마스터 비밀번호로 잠금 해제
+   * 마스터 비밀번호로 잠금 해제 (Standard)
    */
   unlock(masterPassword: string, saltBase64: string): Promise<boolean> {
     return new Promise((resolve) => {
-      // UI 인터랙션이 완료된 후 실행
+      // UI 렌더링을 차단하지 않도록 InteractionManager 사용
       InteractionManager.runAfterInteractions(() => {
         setTimeout(async () => {
           try {
@@ -137,6 +148,26 @@ export class CryptoManager implements ICryptoManager {
             resolve(true);
           } catch (error) {
             console.error('Crypto unlock failed:', error);
+            resolve(false);
+          }
+        }, 50); // 딜레이 단축
+      });
+    });
+  }
+
+  /**
+   * 마스터 비밀번호로 잠금 해제 (Legacy)
+   */
+  unlockLegacy(masterPassword: string, saltBase64: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      InteractionManager.runAfterInteractions(() => {
+        setTimeout(async () => {
+          try {
+            const salt = base64ToBuffer(saltBase64);
+            this.key = await this.deriveKeyLegacy(masterPassword, salt);
+            resolve(true);
+          } catch (error) {
+            console.error('Crypto unlock legacy failed:', error);
             resolve(false);
           }
         }, 100);
@@ -159,24 +190,29 @@ export class CryptoManager implements ICryptoManager {
   }
 
   /**
-   * 암호화 (AES-256-GCM)
+   * 암호화 (AES-256-GCM - JS)
    */
   encrypt(plaintext: string): Promise<EncryptedData | null> {
     return new Promise((resolve) => {
-      if (!this.key) {
+      const key = this.key;
+      if (!key) {
         resolve(null);
         return;
       }
 
       requestAnimationFrame(() => {
         try {
-          const iv = randomBytes(IV_LENGTH);
-          const aesGcm = gcm(this.key!, iv);
-          const plainBytes = stringToUint8Array(plaintext);
-          const encrypted = aesGcm.encrypt(plainBytes);
+          const iv = new Uint8Array(IV_LENGTH);
+          crypto.getRandomValues(iv);
+
+          const aes256 = gcm(key, iv);
+          const plaintextBytes = new TextEncoder().encode(plaintext);
+          
+          // @noble/ciphers encrypt returns ciphertext + authTag (concatenated)
+          const encryptedWithTag = aes256.encrypt(plaintextBytes);
 
           resolve({
-            encrypted: bufferToBase64(encrypted),
+            encrypted: bufferToBase64(encryptedWithTag),
             iv: bufferToBase64(iv)
           });
         } catch (error) {
@@ -188,25 +224,30 @@ export class CryptoManager implements ICryptoManager {
   }
 
   /**
-   * 복호화 (AES-256-GCM)
+   * 복호화 (AES-256-GCM - JS)
    */
   decrypt(encryptedBase64: string, ivBase64: string): Promise<string | null> {
     return new Promise((resolve) => {
-      if (!this.key) {
+      const key = this.key;
+      if (!key) {
         resolve(null);
         return;
       }
 
       requestAnimationFrame(() => {
         try {
-          const encrypted = base64ToBuffer(encryptedBase64);
+          const encryptedWithTag = base64ToBuffer(encryptedBase64);
           const iv = base64ToBuffer(ivBase64);
-          const aesGcm = gcm(this.key!, iv);
-          const decrypted = aesGcm.decrypt(encrypted);
-          const result = uint8ArrayToString(decrypted);
-          resolve(result || null);
+
+          const aes256 = gcm(key, iv);
+          
+          // @noble/ciphers decrypt expects ciphertext + authTag
+          const decryptedBytes = aes256.decrypt(encryptedWithTag);
+          const decrypted = new TextDecoder().decode(decryptedBytes);
+
+          resolve(decrypted || null);
         } catch (error) {
-          console.error('Decryption failed:', error);
+          // Decryption failed (wrong key or corrupted data).
           resolve(null);
         }
       });

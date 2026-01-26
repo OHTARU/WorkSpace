@@ -20,6 +20,7 @@ import * as Sharing from 'expo-sharing';
 import { Video, ResizeMode } from 'expo-av';
 import { supabase } from '../../src/lib/supabase';
 import { useAuth } from '../../src/contexts/AuthContext';
+import { useSubscription } from '../../src/hooks/useSubscription';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const { width: screenWidth } = Dimensions.get('window');
@@ -43,6 +44,7 @@ export default function ClipboardScreen() {
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState<string | null>(null);
   const { user } = useAuth();
+  const { checkLimit } = useSubscription();
 
   useEffect(() => {
     fetchClipboards();
@@ -133,6 +135,17 @@ export default function ClipboardScreen() {
 
   const uploadMedia = async (asset: ImagePicker.ImagePickerAsset) => {
     if (!user) return;
+
+    // 구독 제한 체크
+    const limit = checkLimit('clipboards');
+    if (!limit.allowed) {
+      Alert.alert(
+        '한도 도달',
+        `클립보드 저장 한도(${limit.limit}개)에 도달했습니다.\n\nPro로 업그레이드하면 무제한으로 저장할 수 있습니다.`,
+        [{ text: '확인', style: 'cancel' }]
+      );
+      return;
+    }
 
     setUploading(true);
     try {

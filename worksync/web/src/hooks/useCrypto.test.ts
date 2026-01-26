@@ -202,14 +202,25 @@ describe('useCrypto', () => {
   });
 
   describe('보안 요구사항', () => {
-    it('PBKDF2 반복 횟수가 100,000회 이상', () => {
-      // useCrypto.ts 파일의 ITERATIONS 상수 확인
-      // 이 테스트는 코드 검토 목적
-      const cryptoModule = require('./useCrypto');
-      const iterations = 100000; // 최소 요구사항
+    it('PBKDF2 반복 횟수가 100,000회 이상', async () => {
+      // deriveKey 호출 시 iterations 옵션 확인
+      const { result } = renderHook(() => useCrypto());
 
-      // 실제 구현에서 100,000회 이상 사용하는지 확인
-      expect(iterations).toBeGreaterThanOrEqual(100000);
+      await act(async () => {
+        await result.current.unlock(mockPassword, mockUserId);
+      });
+
+      expect(crypto.subtle.deriveKey).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'PBKDF2',
+          iterations: 100000, // 정확히 100,000회 사용하는지 확인
+          hash: 'SHA-256',
+        }),
+        expect.anything(),
+        expect.anything(),
+        false,
+        expect.anything()
+      );
     });
 
     it('AES-256-GCM 알고리즘 사용', async () => {

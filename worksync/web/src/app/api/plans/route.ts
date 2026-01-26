@@ -1,11 +1,11 @@
 // 플랜 목록 조회 API
 import { NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase/server';
+import { createClient } from '@/lib/supabase/server';
 
 // GET: 모든 활성 플랜 목록 조회
 export async function GET() {
   try {
-    const supabase = await createServerClient();
+    const supabase = createClient();
 
     const { data: plans, error } = await supabase
       .from('plans')

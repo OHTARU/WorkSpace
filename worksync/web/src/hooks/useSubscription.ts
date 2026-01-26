@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { createBrowserClient } from '@/lib/supabase/client';
+import { createClient } from '@/lib/supabase/client';
 import type {
   Subscription,
   Plan,
@@ -34,7 +34,7 @@ export function useSubscription(): UseSubscriptionReturn {
     error: null,
   });
 
-  const supabase = createBrowserClient();
+  const supabase = createClient();
 
   const fetchSubscription = useCallback(async () => {
     try {
@@ -53,22 +53,37 @@ export function useSubscription(): UseSubscriptionReturn {
         return;
       }
 
-      // 구독 + 플랜 정보 조회
-      const { data: subscription, error: subError } = await supabase
+      // 1. 플랜 정보 조회 (Free 플랜을 기본으로 가져옴)
+      // 실제 구독 테이블(subscriptions) 조회가 실패하거나 없으면 Free 플랜 적용
+      let currentPlan: Plan | null = null;
+      let currentSubscription: Subscription | null = null;
+
+      // DB에서 plan 정보 가져오기 시도 (subscriptions 테이블 연동이 되어 있다면)
+      const { data: subData } = await supabase
         .from('subscriptions')
         .select(`*, plan:plans(*)`)
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
-      if (subError) throw subError;
+      if (subData) {
+        currentSubscription = subData as unknown as Subscription;
+        currentPlan = subData.plan as Plan;
+      } else {
+        // 구독 정보가 없으면 Free 플랜 정보 가져오기
+        const { data: freePlan } = await supabase
+          .from('plans')
+          .select('*')
+          .eq('name', 'free')
+          .single();
+          
+        currentPlan = freePlan as Plan;
+      }
 
-      // 사용량 조회
-      const { data: usageData, error: usageError } = await supabase
+      // 2. 사용량 조회
+      const { data: usageData } = await supabase
         .from('usage_tracking')
         .select('*')
         .eq('user_id', user.id);
-
-      if (usageError) throw usageError;
 
       // 사용량 매핑
       const usageMap: Record<string, UsageTracking> = {};
@@ -77,8 +92,8 @@ export function useSubscription(): UseSubscriptionReturn {
       });
 
       setState({
-        subscription: subscription as Subscription,
-        plan: subscription?.plan as Plan,
+        subscription: currentSubscription,
+        plan: currentPlan,
         usage: usageMap,
         isLoading: false,
         error: null,
@@ -104,17 +119,6 @@ export function useSubscription(): UseSubscriptionReturn {
         {
           event: '*',
           schema: 'public',
-          table: 'subscriptions',
-        },
-        () => {
-          fetchSubscription();
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
           table: 'usage_tracking',
         },
         () => {
@@ -133,11 +137,12 @@ export function useSubscription(): UseSubscriptionReturn {
     (feature: keyof PlanLimits) => {
       const { plan, usage } = state;
 
+      // 플랜 정보가 로딩되지 않았으면 일단 차단 (안전하게)
       if (!plan) {
         return { allowed: false, current: 0, limit: 0, remaining: 0 };
       }
 
-      const limit = plan.limits[feature] as number;
+      const limit = (plan.limits[feature] ?? 0) as number;
       const current = usage[feature]?.current_count || 0;
 
       // -1은 무제한

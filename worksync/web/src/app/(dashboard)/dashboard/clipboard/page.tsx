@@ -4,9 +4,12 @@ import { useState, useEffect, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Plus, Trash2, Copy, Pin, PinOff, Monitor, Upload, Image as ImageIcon, Video, Download } from 'lucide-react';
 import { usePagination } from '@/hooks/usePagination';
+import { useSubscription } from '@/hooks/useSubscription';
 import { Pagination } from '@/components/Pagination';
 import { SkeletonClipboardItem, SkeletonList } from '@/components/Skeleton';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { UpgradeModal } from '@/components/subscription/UpgradeModal';
+import { UsageWarningBanner } from '@/components/subscription/UsageWarningBanner';
 import toast from 'react-hot-toast';
 import { validateFileAsync, formatFileSize } from '@/utils/fileValidation';
 import { logger } from '@/lib/logger';
@@ -41,9 +44,12 @@ export default function ClipboardPage() {
   const [dragOver, setDragOver] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Clipboard | null>(null);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [limitInfo, setLimitInfo] = useState({ current: 0, limit: 0 });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
   const pagination = usePagination({ initialPageSize: 20 });
+  const { checkLimit, isFree } = useSubscription();
 
   // 사용자 확인
   useEffect(() => {
@@ -144,6 +150,14 @@ export default function ClipboardPage() {
     e.preventDefault();
     if (!newContent.trim() || !userId) return;
 
+    // 구독 제한 체크
+    const limit = checkLimit('clipboards');
+    if (!limit.allowed) {
+      setLimitInfo({ current: limit.current, limit: limit.limit });
+      setShowUpgradeModal(true);
+      return;
+    }
+
     const { error } = await supabase.from('clipboards').insert({
       user_id: userId,
       content: newContent.trim(),
@@ -182,6 +196,14 @@ export default function ClipboardPage() {
 
   const uploadMedia = async (file: File) => {
     if (!userId) return;
+
+    // 구독 제한 체크
+    const limit = checkLimit('clipboards');
+    if (!limit.allowed) {
+      setLimitInfo({ current: limit.current, limit: limit.limit });
+      setShowUpgradeModal(true);
+      return;
+    }
 
     setUploading(true);
     try {
@@ -356,6 +378,15 @@ export default function ClipboardPage() {
   return (
     <div>
       <h1 className="text-2xl font-bold text-gray-900 mb-8">클립보드 동기화</h1>
+
+      {/* 사용량 경고 배너 */}
+      {isFree && (
+        <UsageWarningBanner
+          feature="clipboards"
+          current={checkLimit('clipboards').current}
+          limit={checkLimit('clipboards').limit}
+        />
+      )}
 
       {/* 클립보드 추가 폼 */}
       <form onSubmit={addClipboard} className="card mb-6">
@@ -575,6 +606,15 @@ export default function ClipboardPage() {
         confirmText="삭제"
         cancelText="취소"
         variant="danger"
+      />
+
+      {/* 업그레이드 모달 */}
+      <UpgradeModal
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        feature="clipboards"
+        current={limitInfo.current}
+        limit={limitInfo.limit}
       />
     </div>
   );

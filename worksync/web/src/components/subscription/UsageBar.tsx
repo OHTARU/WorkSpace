@@ -9,7 +9,11 @@ interface UsageBarProps {
 
 export function UsageBar({ label, current, limit, showLabel = true }: UsageBarProps) {
   const isUnlimited = limit === -1;
-  const percentage = isUnlimited ? 0 : Math.min(100, Math.round((current / limit) * 100));
+  const percentage = isUnlimited 
+    ? 0 
+    : (!limit 
+        ? (current > 0 ? 100 : 0) 
+        : Math.min(100, Math.round((current / limit) * 100)));
 
   const getBarColor = () => {
     if (isUnlimited) return 'bg-green-500';

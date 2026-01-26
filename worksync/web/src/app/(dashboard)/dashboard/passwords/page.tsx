@@ -4,17 +4,20 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useCrypto } from '@/hooks/useCrypto';
 import { useRateLimit } from '@/hooks/useRateLimit';
+import { useSubscription } from '@/hooks/useSubscription';
 import { sanitizeText, sanitizeUrl } from '@/utils/sanitize';
 import { Plus, Trash2, Eye, EyeOff, Copy, ExternalLink, Lock, Unlock, KeyRound } from 'lucide-react';
 import { Modal } from '@/components/Modal';
+import { UpgradeModal } from '@/components/subscription/UpgradeModal';
+import { UsageWarningBanner } from '@/components/subscription/UsageWarningBanner';
 import toast from 'react-hot-toast';
 import { SkeletonPasswordItem, SkeletonList } from '@/components/Skeleton';
 import type { Password } from '@shared/types';
-import { 
-  deriveKeyWebCrypto, 
-  encryptWebCrypto, 
-  decryptWebCrypto, 
-  base64ToBuffer 
+import {
+  deriveKeyWebCrypto,
+  encryptWebCrypto,
+  decryptWebCrypto,
+  base64ToBuffer
 } from '@shared/utils/crypto';
 
 interface DecryptedPassword extends Password {
@@ -44,8 +47,13 @@ export default function PasswordsPage() {
   const [websiteUrl, setWebsiteUrl] = useState('');
   const [notes, setNotes] = useState('');
 
+  // 구독 제한 상태
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [limitInfo, setLimitInfo] = useState({ current: 0, limit: 0 });
+
   const supabase = createClient();
   const { encrypt, decrypt, unlock, generateSalt, isReady, isLocked } = useCrypto();
+  const { checkLimit, isFree } = useSubscription();
   const rateLimit = useRateLimit('master_password_unlock', {
     maxAttempts: 5,
     windowMs: 60000, // 1분
@@ -282,6 +290,14 @@ export default function PasswordsPage() {
     e.preventDefault();
     if (!encrypt || !userId) return;
 
+    // 구독 제한 체크
+    const limit = checkLimit('passwords');
+    if (!limit.allowed) {
+      setLimitInfo({ current: limit.current, limit: limit.limit });
+      setShowUpgradeModal(true);
+      return;
+    }
+
     // 입력값 Sanitization (XSS 방어)
     const sanitizedServiceName = sanitizeText(serviceName);
     const sanitizedUsername = sanitizeText(username);
@@ -505,6 +521,15 @@ export default function PasswordsPage() {
         </button>
       </div>
 
+      {/* 사용량 경고 배너 */}
+      {isFree && (
+        <UsageWarningBanner
+          feature="passwords"
+          current={checkLimit('passwords').current}
+          limit={checkLimit('passwords').limit}
+        />
+      )}
+
       {/* 비밀번호 목록 */}
       <div className="space-y-3">
         {passwords.length === 0 ? (
@@ -673,6 +698,15 @@ export default function PasswordsPage() {
           비밀번호는 AES-256-GCM으로 암호화되어 안전하게 저장됩니다.
         </p>
       </Modal>
+
+      {/* 업그레이드 모달 */}
+      <UpgradeModal
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        feature="passwords"
+        current={limitInfo.current}
+        limit={limitInfo.limit}
+      />
     </div>
   );
 }

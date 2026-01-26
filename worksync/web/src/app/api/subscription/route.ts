@@ -1,11 +1,11 @@
 // 구독 정보 조회 API
 import { NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase/server';
+import { createClient } from '@/lib/supabase/server';
 
 // GET: 현재 사용자의 구독 정보 조회
 export async function GET() {
   try {
-    const supabase = await createServerClient();
+    const supabase = createClient();
 
     const {
       data: { user },

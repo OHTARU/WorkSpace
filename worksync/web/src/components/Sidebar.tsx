@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { AdSenseBanner } from './AdSenseBanner';
 import {
   Link2,
   Lock,
@@ -67,6 +68,10 @@ export default function Sidebar({ user }: SidebarProps) {
           );
         })}
       </nav>
+
+      <div className="px-4 pb-4">
+        <AdSenseBanner />
+      </div>
 
       <div className="p-4 border-t border-gray-200">
         <button
