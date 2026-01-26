@@ -141,7 +141,28 @@ export default function ClipboardPage() {
     if (error) {
       toast.error('클립보드 목록을 불러오는데 실패했습니다.');
     } else {
-      setClipboards(data || []);
+      // Signed URL 생성
+      const signedData = await Promise.all((data || []).map(async (item) => {
+        if (item.media_url && (item.content_type === 'image' || item.content_type === 'video')) {
+          const { data: signed } = await supabase.storage
+            .from('clipboard-media')
+            .createSignedUrl(item.media_url, 3600); // 1시간 유효
+          
+          if (signed) {
+            // 원본 경로(path)는 유지하고, 표시용 URL만 교체하거나 별도 필드로 관리
+            // 여기서는 표시를 위해 media_url을 교체하지만, 삭제 시에는 원본 경로가 필요함.
+            // 하지만 클라이언트 상태에서만 교체하므로 삭제 함수에서 주의 필요.
+            // 더 안전한 방법: path는 그대로 두고 signedUrl 속성 추가 (타입 수정 필요하지만 여기서는 media_url 덮어쓰기 후 삭제 시 역변환/또는 path 별도 저장 등 고려)
+            // 간단히: media_url을 signed url로 덮어쓰되, 삭제 시에는 URL에서 경로 추출하거나
+            // 애초에 DB에 path만 저장하기로 했으므로, 여기서 덮어쓰면 삭제 시 path를 알 수 없음?
+            // 아니, Signed URL은 복잡함.
+            // 해결책: item에 original_path 속성을 추가하여 상태 저장.
+            return { ...item, original_path: item.media_url, media_url: signed.signedUrl };
+          }
+        }
+        return { ...item, original_path: item.media_url };
+      }));
+      setClipboards(signedData);
     }
     setLoading(false);
   };
@@ -223,18 +244,13 @@ export default function ClipboardPage() {
         throw uploadError;
       }
 
-      // Public URL 가져오기
-      const { data: urlData } = supabase.storage
-        .from('clipboard-media')
-        .getPublicUrl(fileName);
-
-      // DB에 저장
+      // DB에 저장 (Public URL 대신 파일 경로 저장)
       const { error: dbError } = await supabase.from('clipboards').insert({
         user_id: userId,
         content: isVideo ? '동영상' : '이미지',
         content_type: isVideo ? 'video' : 'image',
         source_device: 'pc',
-        media_url: urlData.publicUrl,
+        media_url: fileName, // 경로 저장
         media_type: file.type,
         file_size: file.size,
       });
@@ -267,11 +283,16 @@ export default function ClipboardPage() {
     setDeleteTarget(null);
 
     // 미디어가 있으면 Storage에서도 삭제
-    if (clip.media_url) {
-      const path = clip.media_url.split('/clipboard-media/')[1];
-      if (path) {
-        await supabase.storage.from('clipboard-media').remove([path]);
-      }
+    // original_path가 있으면 그것을 사용 (fetch에서 주입함), 없으면 media_url 사용
+    const path = (clip as any).original_path || clip.media_url;
+    
+    if (path) {
+        // 기존 Public URL 방식일 경우 파싱, 아니면 그대로 사용
+        const storagePath = path.includes('/clipboard-media/') 
+            ? path.split('/clipboard-media/')[1] 
+            : path;
+            
+        await supabase.storage.from('clipboard-media').remove([storagePath]);
     }
 
     const { error } = await supabase.from('clipboards').delete().eq('id', clip.id);
