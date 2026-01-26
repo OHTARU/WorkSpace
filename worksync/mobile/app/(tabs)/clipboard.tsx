@@ -80,7 +80,21 @@ export default function ClipboardScreen() {
     if (error) {
       Alert.alert('오류', '목록을 불러오는데 실패했습니다.');
     } else {
-      setClipboards(data || []);
+        // Signed URL 생성
+        const signedData = await Promise.all((data || []).map(async (item) => {
+            if (item.media_url && (item.content_type === 'image' || item.content_type === 'video')) {
+              const { data: signed } = await supabase.storage
+                .from('clipboard-media')
+                .createSignedUrl(item.media_url, 3600);
+              
+              if (signed) {
+                // original_path 추가하여 삭제 시 사용
+                return { ...item, original_path: item.media_url, media_url: signed.signedUrl };
+              }
+            }
+            return { ...item, original_path: item.media_url };
+          }));
+      setClipboards(signedData);
     }
     setLoading(false);
     setRefreshing(false);
@@ -181,18 +195,13 @@ export default function ClipboardScreen() {
         throw uploadError;
       }
 
-      // Public URL 가져오기
-      const { data: urlData } = supabase.storage
-        .from('clipboard-media')
-        .getPublicUrl(fileName);
-
-      // DB에 저장
+      // DB에 저장 (Public URL 대신 경로 저장)
       const { error: dbError } = await supabase.from('clipboards').insert({
         user_id: user.id,
         content: isVideo ? '동영상' : '이미지',
         content_type: isVideo ? 'video' : 'image',
         source_device: 'mobile',
-        media_url: urlData.publicUrl,
+        media_url: fileName, // 경로 저장
         media_type: contentType,
         file_size: asset.fileSize || arrayBuffer.byteLength,
       });
@@ -230,11 +239,13 @@ export default function ClipboardScreen() {
         style: 'destructive',
         onPress: async () => {
           // 미디어가 있으면 Storage에서도 삭제
-          if (item.media_url) {
-            const path = item.media_url.split('/clipboard-media/')[1];
-            if (path) {
-              await supabase.storage.from('clipboard-media').remove([path]);
-            }
+          const path = (item as any).original_path || item.media_url;
+          if (path) {
+             const storagePath = path.includes('/clipboard-media/') 
+                ? path.split('/clipboard-media/')[1] 
+                : path;
+            
+            await supabase.storage.from('clipboard-media').remove([storagePath]);
           }
           await supabase.from('clipboards').delete().eq('id', item.id);
         },

@@ -184,8 +184,8 @@ ADD COLUMN IF NOT EXISTS encryption_salt TEXT;
 -- Storage 버킷 및 정책
 -- =====================================================
 INSERT INTO storage.buckets (id, name, public)
-VALUES ('clipboard-media', 'clipboard-media', true)
-ON CONFLICT (id) DO NOTHING;
+VALUES ('clipboard-media', 'clipboard-media', false)
+ON CONFLICT (id) DO UPDATE SET public = false;
 
 CREATE POLICY "Users can upload own media"
 ON storage.objects FOR INSERT
@@ -207,7 +207,3 @@ USING (
   bucket_id = 'clipboard-media'
   AND auth.uid()::text = (storage.foldername(name))[1]
 );
-
-CREATE POLICY "Public can view clipboard media"
-ON storage.objects FOR SELECT
-USING (bucket_id = 'clipboard-media');

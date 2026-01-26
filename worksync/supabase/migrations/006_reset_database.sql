@@ -224,6 +224,7 @@ ALTER TABLE plans ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can view own profile" ON profiles FOR SELECT USING (auth.uid() = id);
 CREATE POLICY "Users can update own profile" ON profiles FOR UPDATE USING (auth.uid() = id);
 CREATE POLICY "Users can insert own profile" ON profiles FOR INSERT WITH CHECK (auth.uid() = id);
+CREATE POLICY "Users can delete own profile" ON profiles FOR DELETE USING (auth.uid() = id);
 
 -- [URLs]
 CREATE POLICY "Users can view own urls" ON urls FOR SELECT USING (auth.uid() = user_id);
@@ -312,8 +313,8 @@ ON CONFLICT (name) DO NOTHING;
 -- 8. Storage 버킷 설정 (멱등성 보장)
 -- -----------------------------------------------------
 INSERT INTO storage.buckets (id, name, public) 
-VALUES ('clipboard-media', 'clipboard-media', true) 
-ON CONFLICT (id) DO NOTHING;
+VALUES ('clipboard-media', 'clipboard-media', false) 
+ON CONFLICT (id) DO UPDATE SET public = false;
 
 -- Storage 정책 (기존 삭제 후 재생성)
 DROP POLICY IF EXISTS "Users can upload own media" ON storage.objects;
@@ -324,4 +325,3 @@ DROP POLICY IF EXISTS "Public can view clipboard media" ON storage.objects;
 CREATE POLICY "Users can upload own media" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'clipboard-media' AND auth.uid()::text = (storage.foldername(name))[1]);
 CREATE POLICY "Users can view own media" ON storage.objects FOR SELECT USING (bucket_id = 'clipboard-media' AND auth.uid()::text = (storage.foldername(name))[1]);
 CREATE POLICY "Users can delete own media" ON storage.objects FOR DELETE USING (bucket_id = 'clipboard-media' AND auth.uid()::text = (storage.foldername(name))[1]);
-CREATE POLICY "Public can view clipboard media" ON storage.objects FOR SELECT USING (bucket_id = 'clipboard-media');

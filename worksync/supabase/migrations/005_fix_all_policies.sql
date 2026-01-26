@@ -93,9 +93,8 @@ CREATE POLICY "Users can delete own clipboards" ON clipboards FOR DELETE USING (
 
 -- 5. Storage 정책 재적용
 -- -----------------------------------------------------
-INSERT INTO storage.buckets (id, name, public) VALUES ('clipboard-media', 'clipboard-media', true) ON CONFLICT (id) DO NOTHING;
+INSERT INTO storage.buckets (id, name, public) VALUES ('clipboard-media', 'clipboard-media', false) ON CONFLICT (id) DO UPDATE SET public = false;
 
 CREATE POLICY "Users can upload own media" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'clipboard-media' AND auth.uid()::text = (storage.foldername(name))[1]);
 CREATE POLICY "Users can view own media" ON storage.objects FOR SELECT USING (bucket_id = 'clipboard-media' AND auth.uid()::text = (storage.foldername(name))[1]);
 CREATE POLICY "Users can delete own media" ON storage.objects FOR DELETE USING (bucket_id = 'clipboard-media' AND auth.uid()::text = (storage.foldername(name))[1]);
-CREATE POLICY "Public can view clipboard media" ON storage.objects FOR SELECT USING (bucket_id = 'clipboard-media');

@@ -158,8 +158,8 @@ ADD COLUMN IF NOT EXISTS encryption_salt TEXT;
 
 -- Storage 버킷 생성 (이미 있으면 무시)
 INSERT INTO storage.buckets (id, name, public)
-VALUES ('clipboard-media', 'clipboard-media', true)
-ON CONFLICT (id) DO NOTHING;
+VALUES ('clipboard-media', 'clipboard-media', false)
+ON CONFLICT (id) DO UPDATE SET public = false;
 
 -- Storage RLS 정책
 CREATE POLICY "Users can upload own media"
@@ -182,8 +182,3 @@ USING (
   bucket_id = 'clipboard-media'
   AND auth.uid()::text = (storage.foldername(name))[1]
 );
-
--- Public read access for clipboard-media (공개 URL 허용)
-CREATE POLICY "Public can view clipboard media"
-ON storage.objects FOR SELECT
-USING (bucket_id = 'clipboard-media');
