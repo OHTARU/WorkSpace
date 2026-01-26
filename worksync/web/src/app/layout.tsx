@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
+import Script from 'next/script';
 import './globals.css';
 import { Toaster } from 'react-hot-toast';
 import { ClientErrorBoundary } from '@/components/ClientErrorBoundary';
@@ -19,6 +20,12 @@ export default function RootLayout({
   return (
     <html lang="ko">
       <body className={inter.className}>
+        <Script
+          async
+          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5539584331662815"
+          crossOrigin="anonymous"
+          strategy="afterInteractive"
+        />
         <ClientErrorBoundary>
           {children}
         </ClientErrorBoundary>
