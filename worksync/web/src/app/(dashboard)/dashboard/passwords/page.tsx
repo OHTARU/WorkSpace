@@ -390,7 +390,7 @@ export default function PasswordsPage() {
     let passwordToCopy = pw.decryptedPassword;
 
     if (!passwordToCopy) {
-      passwordToCopy = await decrypt(pw.password_encrypted, pw.iv);
+      passwordToCopy = (await decrypt(pw.password_encrypted, pw.iv)) || undefined;
     }
 
     if (passwordToCopy) {
