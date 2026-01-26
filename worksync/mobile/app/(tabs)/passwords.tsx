@@ -227,6 +227,7 @@ export default function PasswordsScreen() {
     }
 
     if (profile?.encryption_salt) {
+    console.log('[DEBUG] Profile data:', { encryption_salt: profile?.encryption_salt ? 'EXISTS' : 'NULL', verifier: profile?.verifier ? 'EXISTS' : 'NULL' });
       setEncryptionSalt(profile.encryption_salt);
       setVerifier(profile.verifier);
       setIsFirstTime(false);
