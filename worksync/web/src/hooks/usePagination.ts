@@ -23,7 +23,7 @@ export interface UsePaginationReturn {
   hasPrevPage: boolean;
   setPage: (page: number) => void;
   setPageSize: (size: number) => void;
-  setTotalCount: (count: number) => void;
+  setTotalCount: (count: number | ((prev: number) => number)) => void;
   nextPage: () => void;
   prevPage: () => void;
   reset: () => void;
@@ -53,7 +53,7 @@ export function usePagination(options: UsePaginationOptions = {}): UsePagination
     setPageState(1); // 페이지 크기 변경 시 첫 페이지로
   }, []);
 
-  const setTotalCount = useCallback((count: number) => {
+  const setTotalCount = useCallback((count: number | ((prev: number) => number)) => {
     setTotalCountState(count);
   }, []);
 
