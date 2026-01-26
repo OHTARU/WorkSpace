@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
+import { AdSenseBanner } from '@/components/AdSenseBanner';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -34,7 +35,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-blue-100">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-primary-50 to-blue-100 p-4">
       <div className="card w-full max-w-md">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-900">WorkSync</h1>
@@ -87,6 +88,10 @@ export default function LoginPage() {
             회원가입
           </Link>
         </p>
+      </div>
+
+      <div className="w-full max-w-md mt-4">
+        <AdSenseBanner />
       </div>
     </div>
   );
