@@ -123,6 +123,11 @@ export function generateSalt(length: number = SALT_LENGTH): Uint8Array {
 // Web Crypto API 기반 함수 (브라우저 전용)
 // ============================================
 
+// Helper to cast Uint8Array to BufferSource safely
+function toBufferSource(arr: Uint8Array): BufferSource {
+  return arr as unknown as BufferSource;
+}
+
 /**
  * PBKDF2로 키 파생 (Web Crypto API)
  */
@@ -132,7 +137,7 @@ export async function deriveKeyWebCrypto(
 ): Promise<CryptoKey> {
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
-    stringToUint8Array(password) as unknown as BufferSource,
+    toBufferSource(stringToUint8Array(password)),
     'PBKDF2',
     false,
     ['deriveBits', 'deriveKey']
@@ -141,7 +146,7 @@ export async function deriveKeyWebCrypto(
   return crypto.subtle.deriveKey(
     {
       name: 'PBKDF2',
-      salt: salt as unknown as BufferSource,
+      salt: toBufferSource(salt),
       iterations: PBKDF2_ITERATIONS,
       hash: 'SHA-256',
     },
@@ -162,9 +167,9 @@ export async function encryptWebCrypto(
   const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
 
   const encryptedBuffer = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
+    { name: 'AES-GCM', iv: toBufferSource(iv) },
     key,
-    stringToUint8Array(plaintext) as unknown as BufferSource
+    toBufferSource(stringToUint8Array(plaintext))
   );
 
   return {
@@ -185,9 +190,9 @@ export async function decryptWebCrypto(
   const iv = base64ToBuffer(ivBase64);
 
   const decryptedBuffer = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv },
+    { name: 'AES-GCM', iv: toBufferSource(iv) },
     key,
-    encryptedBuffer as unknown as BufferSource
+    toBufferSource(encryptedBuffer)
   );
 
   return uint8ArrayToString(new Uint8Array(decryptedBuffer));
