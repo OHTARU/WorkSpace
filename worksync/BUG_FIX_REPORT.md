@@ -320,25 +320,25 @@ const path = clip.original_path || clip.media_url;  // (clip as any) 제거
 
 ---
 
-## 4. 남은 보안 취약점
+### 4. 남은 보안 취약점
 
-### 4.1 High - CSRF 보호 없음 (추가 개발 필요)
+### 4.1 High - CSRF 보호 없음 (완료)
 
 | 항목 | 내용 |
 |------|------|
-| **파일** | `web/src/app/api/*` 전체 API 라우트 |
+| **파일** | `web/middleware.ts` |
 | **문제** | POST/DELETE 요청에 CSRF 토큰 미사용 |
-| **권장 조치** | 미들웨어에서 CSRF 토큰 검증 추가 |
+| **조치** | **[완료]** Middleware에서 Origin/Host 헤더 불일치 시 차단 로직 추가 |
 
 ---
 
-### 4.2 High - 클라이언트 사이드 Rate Limiting (추가 개발 필요)
+### 4.2 High - 클라이언트 사이드 Rate Limiting (완료)
 
 | 항목 | 내용 |
 |------|------|
-| **파일** | `web/src/hooks/useRateLimit.ts` |
+| **파일** | `web/middleware.ts` |
 | **문제** | localStorage에 저장되어 우회 가능 |
-| **권장 조치** | 서버 사이드 rate limiting 추가 |
+| **조치** | **[완료]** Middleware에서 IP 기반 인메모리 Rate Limiting (Token Bucket) 추가 |
 
 ---
 
@@ -359,12 +359,11 @@ const path = clip.original_path || clip.media_url;  // (clip as any) 제거
 | 10 | PBKDF2 반복 횟수 증가 | ✅ 완료 |
 | 11 | 로깅 일관성 | ✅ 완료 |
 | 12 | 타입 안정성 | ✅ 완료 |
+| 13 | CSRF 보호 추가 | ✅ 완료 |
+| 14 | 서버 사이드 Rate Limiting | ✅ 완료 |
 
 ### 남은 작업
-| # | 항목 | 예상 작업 |
-|---|------|----------|
-| 1 | CSRF 보호 추가 | 미들웨어 구현 |
-| 2 | 서버 사이드 Rate Limiting | Edge Function 추가 |
+*(모든 계획된 수정 작업이 완료되었습니다)*
 
 ---
 
@@ -375,10 +374,10 @@ const path = clip.original_path || clip.media_url;  // (clip as any) 제거
 | 심각도 | 발견 | 수정 완료 | 남은 항목 |
 |--------|-----|----------|----------|
 | Critical | 0 | 0 | 0 |
-| High | 7 | **6** | 1 (CSRF) |
-| Medium | 9 | **8** | 1 (Rate Limit) |
+| High | 7 | **7** | 0 |
+| Medium | 9 | **9** | 0 |
 | Low | 4 | **4** | 0 |
-| **합계** | **20** | **18** | **2** |
+| **합계** | **20** | **20** | **0** |
 
 ### 6.2 수정으로 인한 개선 효과
 

@@ -1,12 +1,59 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
+// 간단한 인메모리 Rate Limiter (Edge Runtime 호환)
+// 주의: 서버리스 환경에서는 인스턴스 간 상태가 공유되지 않으므로 완벽한 전역 제한은 아님.
+// 하지만 단일 인스턴스에 대한 DoS 공격을 완화하는 데 도움됨.
+const rateLimit = new Map<string, { count: number; lastReset: number }>();
+const RATE_LIMIT_WINDOW = 60 * 1000; // 1분
+const RATE_LIMIT_MAX = 100; // 1분당 100회 요청
+
+function checkRateLimit(ip: string) {
+  const now = Date.now();
+  const record = rateLimit.get(ip) || { count: 0, lastReset: now };
+
+  if (now - record.lastReset > RATE_LIMIT_WINDOW) {
+    record.count = 0;
+    record.lastReset = now;
+  }
+
+  record.count++;
+  rateLimit.set(ip, record);
+
+  return record.count <= RATE_LIMIT_MAX;
+}
+
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
     request: {
       headers: request.headers,
     },
   });
+
+  // 1. CSRF 보호: Origin 검증 (API 요청인 경우)
+  if (request.nextUrl.pathname.startsWith('/api/') && request.method !== 'GET') {
+    const origin = request.headers.get('origin');
+    const host = request.headers.get('host');
+    
+    // Origin 헤더가 존재하고, Host와 다르면 차단 (CSRF 공격 가능성)
+    if (origin && host && !origin.includes(host)) {
+      // 로컬 개발 환경(localhost) 예외 처리, Supabase Function 등 예외 필요 시 추가
+      if (!origin.includes('localhost') && !origin.includes('127.0.0.1')) {
+         return new NextResponse(JSON.stringify({ message: 'Invalid Origin' }), { status: 403 });
+      }
+    }
+  }
+
+  // 2. Rate Limiting (API 요청에 대해)
+  if (request.nextUrl.pathname.startsWith('/api/')) {
+    const ip = request.ip || 'unknown';
+    if (!checkRateLimit(ip)) {
+      return new NextResponse(JSON.stringify({ message: 'Too many requests' }), { 
+        status: 429,
+        headers: { 'Retry-After': '60' } 
+      });
+    }
+  }
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

@@ -22,6 +22,8 @@ import { supabase } from '../../src/lib/supabase';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { useSubscription } from '../../src/hooks/useSubscription';
 
+import { AdBanner } from '../../src/components/AdBanner';
+
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -460,6 +462,9 @@ export default function ClipboardScreen() {
 
   return (
     <View style={styles.container}>
+      {/* AdMob 배너 */}
+      <AdBanner />
+
       {/* 업로드 중 오버레이 */}
       {uploading && (
         <View style={styles.uploadingOverlay}>
