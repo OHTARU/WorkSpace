@@ -32,9 +32,12 @@ import { CSS } from '@dnd-kit/utilities';
 import type { Project, Todo, TodoPeriod } from '@shared/types';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { usePagination } from '@/hooks/usePagination';
+import { useSubscription } from '@/hooks/useSubscription';
 import { Pagination } from '@/components/Pagination';
 import { SkeletonProject, SkeletonList } from '@/components/Skeleton';
 import { Modal } from '@/components/Modal';
+import { UpgradeModal } from '@/components/subscription/UpgradeModal';
+import { UsageWarningBanner } from '@/components/subscription/UsageWarningBanner';
 
 const PERIOD_LABELS: Record<TodoPeriod, string> = {
   monthly: '월간',
@@ -140,8 +143,13 @@ export default function TodosPage() {
   const [todoPeriod, setTodoPeriod] = useState<TodoPeriod>('daily');
   const [todoDate, setTodoDate] = useState('');
 
+  // 구독 제한 상태
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [limitInfo, setLimitInfo] = useState({ current: 0, limit: 0 });
+
   const supabase = createClient();
   const pagination = usePagination({ initialPageSize: 10 });
+  const { checkLimit, isFree } = useSubscription();
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -250,6 +258,14 @@ export default function TodosPage() {
   const addProject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!userId) return;
+
+    // 구독 제한 체크
+    const limit = checkLimit('projects');
+    if (!limit.allowed) {
+      setLimitInfo({ current: limit.current, limit: limit.limit });
+      setShowUpgradeModal(true);
+      return;
+    }
 
     const { error } = await supabase.from('projects').insert({
       user_id: userId,
@@ -407,6 +423,15 @@ export default function TodosPage() {
           프로젝트 추가
         </button>
       </div>
+
+      {/* 사용량 경고 배너 */}
+      {isFree && (
+        <UsageWarningBanner
+          feature="projects"
+          current={checkLimit('projects').current}
+          limit={checkLimit('projects').limit}
+        />
+      )}
 
       {/* 프로젝트 목록 */}
       <div className="space-y-4">
@@ -621,6 +646,15 @@ export default function TodosPage() {
           </div>
         </form>
       </Modal>
+
+      {/* 업그레이드 모달 */}
+      <UpgradeModal
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        feature="projects"
+        current={limitInfo.current}
+        limit={limitInfo.limit}
+      />
     </div>
   );
 }

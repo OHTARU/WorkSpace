@@ -27,6 +27,8 @@ import { StatusBar } from 'expo-status-bar';
 import NetInfo from '@react-native-community/netinfo';
 import { Ionicons } from '@expo/vector-icons';
 
+import { AdBanner } from '../src/components/AdBanner';
+
 export default function RootLayout() {
   const [isConnected, setIsConnected] = useState<boolean | null>(true);
 
@@ -48,7 +50,10 @@ export default function RootLayout() {
             <Text style={styles.offlineText}>오프라인 상태입니다. 변경사항이 저장되지 않을 수 있습니다.</Text>
           </View>
         )}
-        <Slot />
+        <View style={{ flex: 1 }}>
+          <Slot />
+        </View>
+        <AdBanner />
       </AuthProvider>
     </GestureHandlerRootView>
   );

@@ -4,10 +4,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { sanitizeUrl } from '@/utils/sanitize';
 import { usePagination } from '@/hooks/usePagination';
+import { useSubscription } from '@/hooks/useSubscription';
 import { Pagination } from '@/components/Pagination';
 import { Plus, Trash2, ExternalLink, Check } from 'lucide-react';
 import { SkeletonUrlItem, SkeletonList } from '@/components/Skeleton';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { UpgradeModal } from '@/components/subscription/UpgradeModal';
+import { UsageWarningBanner } from '@/components/subscription/UsageWarningBanner';
 import toast from 'react-hot-toast';
 import { logger } from '@/lib/logger';
 import type { Url } from '@shared/types';
@@ -20,9 +23,12 @@ export default function UrlsPage() {
   const [newTitle, setNewTitle] = useState('');
   const [userId, setUserId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [limitInfo, setLimitInfo] = useState({ current: 0, limit: 0 });
 
   const supabase = createClient();
   const pagination = usePagination({ initialPageSize: 20 });
+  const { checkLimit, isFree } = useSubscription();
 
   // 사용자 확인
   useEffect(() => {
@@ -152,6 +158,14 @@ export default function UrlsPage() {
     e.preventDefault();
     if (!newUrl.trim() || !userId) return;
 
+    // 구독 제한 체크
+    const limit = checkLimit('urls');
+    if (!limit.allowed) {
+      setLimitInfo({ current: limit.current, limit: limit.limit });
+      setShowUpgradeModal(true);
+      return;
+    }
+
     // URL 검증 및 SSRF 방어
     const urlToSave = sanitizeUrl(newUrl.trim());
     if (!urlToSave) {
@@ -265,6 +279,15 @@ export default function UrlsPage() {
     <div>
       <h1 className="text-2xl font-bold text-gray-900 mb-8">URL 동기화</h1>
 
+      {/* 사용량 경고 배너 */}
+      {isFree && (
+        <UsageWarningBanner
+          feature="urls"
+          current={checkLimit('urls').current}
+          limit={checkLimit('urls').limit}
+        />
+      )}
+
       {/* URL 추가 폼 */}
       <form onSubmit={addUrl} className="card mb-6">
         <div className="flex gap-4">
@@ -373,6 +396,15 @@ export default function UrlsPage() {
         confirmText="삭제"
         cancelText="취소"
         variant="danger"
+      />
+
+      {/* 업그레이드 모달 */}
+      <UpgradeModal
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        feature="urls"
+        current={limitInfo.current}
+        limit={limitInfo.limit}
       />
     </div>
   );

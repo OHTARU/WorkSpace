@@ -132,7 +132,7 @@ export async function deriveKeyWebCrypto(
 ): Promise<CryptoKey> {
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
-    stringToUint8Array(password),
+    stringToUint8Array(password) as unknown as BufferSource,
     'PBKDF2',
     false,
     ['deriveBits', 'deriveKey']

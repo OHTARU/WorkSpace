@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { createBrowserClient } from '@/lib/supabase/client';
+import { createClient } from '@/lib/supabase/client';
 import type {
   Subscription,
   Plan,
@@ -34,7 +34,7 @@ export function useSubscription(): UseSubscriptionReturn {
     error: null,
   });
 
-  const supabase = createBrowserClient();
+  const supabase = createClient();
 
   const fetchSubscription = useCallback(async () => {
     try {
@@ -63,7 +63,7 @@ export function useSubscription(): UseSubscriptionReturn {
         .from('subscriptions')
         .select(`*, plan:plans(*)`)
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
       if (subData) {
         currentSubscription = subData as unknown as Subscription;
@@ -142,7 +142,7 @@ export function useSubscription(): UseSubscriptionReturn {
         return { allowed: false, current: 0, limit: 0, remaining: 0 };
       }
 
-      const limit = plan.limits[feature] as number;
+      const limit = (plan.limits[feature] ?? 0) as number;
       const current = usage[feature]?.current_count || 0;
 
       // -1은 무제한

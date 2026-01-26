@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef, memo } from 'react';
 import {
   View,
   Text,
@@ -12,13 +12,17 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  AppState,
+  AppStateStatus,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as Clipboard from 'expo-clipboard';
 import * as SecureStore from 'expo-secure-store';
+import * as ScreenCapture from 'expo-screen-capture';
 import { supabase } from '../../src/lib/supabase';
 import { useAuth } from '../../src/contexts/AuthContext';
+import { useSubscription } from '../../src/hooks/useSubscription';
 import { cryptoManager } from '../../src/utils/crypto';
 
 interface Password {
@@ -32,6 +36,98 @@ interface Password {
   created_at: string;
 }
 
+// -----------------------------------------------------------------------------
+// [최적화 1] PasswordItem 컴포넌트 분리 (memoization)
+// 리스트 렌더링 성능을 위해 개별 아이템을 별도 컴포넌트로 분리하고 memo로 감쌉니다.
+// -----------------------------------------------------------------------------
+const PasswordItem = memo(({ 
+  item, 
+  isVisible, 
+  decryptedPassword, 
+  onToggleVisibility, 
+  onCopy, 
+  onEdit, 
+  onDelete 
+}: {
+  item: Password,
+  isVisible: boolean,
+  decryptedPassword?: string,
+  onToggleVisibility: (id: string) => void,
+  onCopy: (id: string) => void,
+  onEdit: (item: Password) => void,
+  onDelete: (id: string, serviceName: string) => void
+}) => {
+  const copyToClipboard = async (text: string, label: string) => {
+    await Clipboard.setStringAsync(text);
+    Alert.alert('복사됨', `${label}이(가) 클립보드에 복사되었습니다.`);
+  };
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.cardHeader}>
+        <Ionicons name="globe-outline" size={24} color="#3B82F6" />
+        <View style={styles.cardInfo}>
+          <Text style={styles.serviceName}>{item.service_name}</Text>
+          <TouchableOpacity onPress={() => copyToClipboard(item.username, '아이디')}>
+            <Text style={styles.username}>{item.username}</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.cardActions}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => onEdit(item)}
+          >
+            <Ionicons name="pencil" size={18} color="#6B7280" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => onDelete(item.id, item.service_name)}
+          >
+            <Ionicons name="trash-outline" size={18} color="#EF4444" />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <View style={styles.passwordRow}>
+        <Text style={styles.passwordLabel}>비밀번호:</Text>
+        <Text style={styles.password} numberOfLines={1}>
+          {isVisible
+            ? decryptedPassword || '***'
+            : '••••••••••••'}
+        </Text>
+        <TouchableOpacity
+          style={styles.iconButton}
+          onPress={() => onToggleVisibility(item.id)}
+        >
+          <Ionicons
+            name={isVisible ? 'eye-off' : 'eye'}
+            size={20}
+            color="#6B7280"
+          />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.iconButton}
+          onPress={() => onCopy(item.id)}
+        >
+          <Ionicons name="copy-outline" size={20} color="#6B7280" />
+        </TouchableOpacity>
+      </View>
+
+      {item.website_url && (
+        <Text style={styles.website} numberOfLines={1}>
+          {item.website_url}
+        </Text>
+      )}
+
+      {item.notes && (
+        <Text style={styles.notes} numberOfLines={2}>
+          {item.notes}
+        </Text>
+      )}
+    </View>
+  );
+});
+
 export default function PasswordsScreen() {
   const [passwords, setPasswords] = useState<Password[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,6 +135,8 @@ export default function PasswordsScreen() {
   const [visiblePasswords, setVisiblePasswords] = useState<Set<string>>(new Set());
   const [decryptedPasswords, setDecryptedPasswords] = useState<Record<string, string>>({});
   const { user } = useAuth();
+  const { checkLimit } = useSubscription();
+  const appState = useRef(AppState.currentState);
 
   // 마스터 비밀번호 관련 상태
   const [isLocked, setIsLocked] = useState(true);
@@ -65,6 +163,43 @@ export default function PasswordsScreen() {
     notes: '',
   });
   const [saving, setSaving] = useState(false);
+
+  // -----------------------------------------------------------------------------
+  // [최적화 2] AppState 감지로 백그라운드 진입 시 데이터 소거 (보안 강화)
+  // -----------------------------------------------------------------------------
+  useEffect(() => {
+    // 화면 캡처 방지 활성화
+    const enableScreenCaptureProtection = async () => {
+      await ScreenCapture.preventScreenCaptureAsync();
+    };
+    enableScreenCaptureProtection();
+
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (
+        appState.current.match(/active/) &&
+        nextAppState.match(/inactive|background/)
+      ) {
+        // 백그라운드로 가면 즉시 잠금 및 데이터 소거
+        lockAndClearData();
+      }
+      appState.current = nextAppState;
+    });
+
+    return () => {
+      subscription.remove();
+      // 컴포넌트 언마운트 시 캡처 방지 해제 (선택사항, 보통은 유지하거나 해제)
+      ScreenCapture.allowScreenCaptureAsync();
+    };
+  }, []);
+
+  const lockAndClearData = useCallback(() => {
+    cryptoManager.lock();
+    setIsLocked(true);
+    setDecryptedPasswords({});
+    setVisiblePasswords(new Set());
+    // 마스터 비밀번호 입력 필드도 초기화 (선택사항)
+    setMasterPassword('');
+  }, []);
 
   useEffect(() => {
     checkPasswordsExist();
@@ -132,7 +267,6 @@ export default function PasswordsScreen() {
     setUnlocking(true);
 
     if (isFirstTime) {
-      // ... (First Time Logic remains same)
       if (masterPassword !== confirmMasterPassword) {
         Alert.alert('오류', '마스터 비밀번호가 일치하지 않습니다.');
         setUnlocking(false);
@@ -144,10 +278,7 @@ export default function PasswordsScreen() {
         return;
       }
 
-      // 1. 새 Salt 생성
       const newSalt = cryptoManager.generateSalt();
-      
-      // 2. 키 파생 및 검증 토큰 생성
       const success = await cryptoManager.unlock(masterPassword, newSalt);
       if (!success) {
         Alert.alert('오류', '암호화 키 생성에 실패했습니다.');
@@ -162,7 +293,6 @@ export default function PasswordsScreen() {
         return;
       }
 
-      // 3. Salt와 Verifier 저장 (Upsert로 변경하여 프로필이 없으면 생성)
       try {
         const { error: profileError } = await supabase
           .from('profiles')
@@ -180,7 +310,6 @@ export default function PasswordsScreen() {
       } catch (error: any) {
         console.error('First save attempt failed:', error);
         
-        // 컬럼 없음 에러(PGRST204 등)일 수 있으므로 verifier 제외하고 재시도
         const { error: retryError } = await supabase
           .from('profiles')
           .upsert({ 
@@ -198,19 +327,6 @@ export default function PasswordsScreen() {
         }
       }
 
-      // 저장 확인 (디버깅용)
-      const { data: verifySave, error: verifyError } = await supabase
-        .from('profiles')
-        .select('encryption_salt')
-        .eq('id', user.id)
-        .single();
-
-      if (verifyError || !verifySave) {
-        Alert.alert('저장 실패 확인', '설정이 DB에 저장되지 않았습니다. RLS 정책을 확인하세요.');
-        setUnlocking(false);
-        return;
-      }
-
       setEncryptionSalt(newSalt);
       setIsLocked(false);
       setShowUnlockModal(false);
@@ -218,11 +334,9 @@ export default function PasswordsScreen() {
       setConfirmMasterPassword('');
       setIsFirstTime(false);
       Alert.alert('성공', '마스터 비밀번호가 설정되었습니다.');
-      // 성공 시 Rate Limit 초기화
       await SecureStore.deleteItemAsync('rate_limit_master_pw');
 
     } else {
-      // 기존 Salt로 unlock
       if (!encryptionSalt) {
         Alert.alert('오류', '암호화 설정을 찾을 수 없습니다.');
         setUnlocking(false);
@@ -271,10 +385,8 @@ export default function PasswordsScreen() {
       if (isVerified) {
         if (migrationNeeded) {
           try {
-            // 마이그레이션 실행
             Alert.alert('보안 업데이트', 'PC 버전과의 호환성을 위해 암호화 방식을 업데이트합니다. 잠시만 기다려주세요.');
             
-            // 1. 기존 데이터 복호화 (Legacy Key 상태)
             const { data: allPasswords } = await supabase
               .from('passwords')
               .select('*')
@@ -288,10 +400,9 @@ export default function PasswordsScreen() {
               }
             }
 
-            // 2. Standard Key로 전환
+            // Standard Key로 전환
             await cryptoManager.unlock(masterPassword, encryptionSalt);
 
-            // 3. 재암호화 및 저장
             for (const item of decryptedList) {
               const enc = await cryptoManager.encrypt(item.plain);
               if (enc) {
@@ -302,7 +413,6 @@ export default function PasswordsScreen() {
               }
             }
 
-            // 4. Verifier 업데이트
             const newVerifier = await cryptoManager.encrypt('WORKSYNC_VERIFIER');
             if (newVerifier) {
               const vStr = JSON.stringify(newVerifier);
@@ -314,11 +424,9 @@ export default function PasswordsScreen() {
           } catch (e) {
             console.error('Migration failed', e);
             Alert.alert('오류', '보안 업데이트 중 오류가 발생했습니다. 나중에 다시 시도해주세요.');
-            // 안전하게 Legacy로 복귀 시도
             await cryptoManager.unlockLegacy(masterPassword, encryptionSalt);
           }
         } else {
-            // Verifier가 없는 구버전 -> Verifier 생성 (Standard Key로)
             if (!verifier) {
                const newVerifier = await cryptoManager.encrypt('WORKSYNC_VERIFIER');
                if (newVerifier) {
@@ -329,18 +437,15 @@ export default function PasswordsScreen() {
             }
         }
 
-        // 성공 처리
         setIsLocked(false);
         setShowUnlockModal(false);
         setMasterPassword('');
         setConfirmMasterPassword('');
         await SecureStore.deleteItemAsync('rate_limit_master_pw');
       } else {
-        // 실패 처리
         cryptoManager.lock();
         Alert.alert('오류', '비밀번호가 올바르지 않습니다.');
 
-        // 실패 횟수 기록
         try {
           const rateLimitStr = await SecureStore.getItemAsync('rate_limit_master_pw');
           let attempts = 0;
@@ -372,7 +477,7 @@ export default function PasswordsScreen() {
     setUnlocking(false);
   };
 
-  const fetchPasswords = async () => {
+  const fetchPasswords = useCallback(async () => {
     if (!user) return;
 
     const { data, error } = await supabase
@@ -387,9 +492,9 @@ export default function PasswordsScreen() {
       setPasswords(data || []);
     }
     setRefreshing(false);
-  };
+  }, [user]);
 
-  const openAddModal = () => {
+  const openAddModal = useCallback(() => {
     setEditingId(null);
     setFormData({
       serviceName: '',
@@ -399,9 +504,9 @@ export default function PasswordsScreen() {
       notes: '',
     });
     setShowFormModal(true);
-  };
+  }, []);
 
-  const openEditModal = async (item: Password) => {
+  const openEditModal = useCallback(async (item: Password) => {
     // 비밀번호 복호화
     const decrypted = await cryptoManager.decrypt(item.password_encrypted, item.iv);
 
@@ -414,7 +519,7 @@ export default function PasswordsScreen() {
       notes: item.notes || '',
     });
     setShowFormModal(true);
-  };
+  }, []);
 
   const handleSave = async () => {
     if (!user) return;
@@ -422,6 +527,21 @@ export default function PasswordsScreen() {
     if (!formData.serviceName.trim() || !formData.username.trim() || !formData.password.trim()) {
       Alert.alert('오류', '서비스명, 아이디, 비밀번호는 필수입니다.');
       return;
+    }
+
+    // 새 항목 추가 시 구독 제한 체크
+    if (!editingId) {
+      const limit = checkLimit('passwords');
+      if (!limit.allowed) {
+        Alert.alert(
+          '한도 도달',
+          `비밀번호 저장 한도(${limit.limit}개)에 도달했습니다.\n\nPro로 업그레이드하면 무제한으로 저장할 수 있습니다.`,
+          [
+            { text: '확인', style: 'cancel' },
+          ]
+        );
+        return;
+      }
     }
 
     setSaving(true);
@@ -482,7 +602,7 @@ export default function PasswordsScreen() {
     setSaving(false);
   };
 
-  const handleDelete = (id: string, serviceName: string) => {
+  const handleDelete = useCallback((id: string, serviceName: string) => {
     Alert.alert(
       '삭제 확인',
       `"${serviceName}" 비밀번호를 삭제하시겠습니까?`,
@@ -512,9 +632,9 @@ export default function PasswordsScreen() {
         },
       ]
     );
-  };
+  }, [fetchPasswords]);
 
-  const authenticateAndShow = async (id: string) => {
+  const authenticateAndShow = useCallback(async (id: string) => {
     if (visiblePasswords.has(id)) {
       setVisiblePasswords((prev) => {
         const next = new Set(prev);
@@ -564,21 +684,16 @@ export default function PasswordsScreen() {
         return next;
       });
     }, 10000);
-  };
+  }, [passwords, visiblePasswords]);
 
-  const copyToClipboard = async (text: string, label: string) => {
-    await Clipboard.setStringAsync(text);
-    Alert.alert('복사됨', `${label}이(가) 클립보드에 복사되었습니다.`);
-  };
-
-  const copyPassword = async (id: string) => {
+  const copyPassword = useCallback(async (id: string) => {
     const pw = passwords.find((p) => p.id === id);
     if (!pw) return;
 
     let passwordToCopy = decryptedPasswords[id];
 
     if (!passwordToCopy || passwordToCopy === '복호화 실패') {
-      passwordToCopy = await cryptoManager.decrypt(pw.password_encrypted, pw.iv);
+      passwordToCopy = (await cryptoManager.decrypt(pw.password_encrypted, pw.iv)) || '';
     }
 
     if (passwordToCopy) {
@@ -587,72 +702,7 @@ export default function PasswordsScreen() {
     } else {
       Alert.alert('오류', '비밀번호 복호화에 실패했습니다.');
     }
-  };
-
-  const renderItem = ({ item }: { item: Password }) => (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <Ionicons name="globe-outline" size={24} color="#3B82F6" />
-        <View style={styles.cardInfo}>
-          <Text style={styles.serviceName}>{item.service_name}</Text>
-          <TouchableOpacity onPress={() => copyToClipboard(item.username, '아이디')}>
-            <Text style={styles.username}>{item.username}</Text>
-          </TouchableOpacity>
-        </View>
-        <View style={styles.cardActions}>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => openEditModal(item)}
-          >
-            <Ionicons name="pencil" size={18} color="#6B7280" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => handleDelete(item.id, item.service_name)}
-          >
-            <Ionicons name="trash-outline" size={18} color="#EF4444" />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <View style={styles.passwordRow}>
-        <Text style={styles.passwordLabel}>비밀번호:</Text>
-        <Text style={styles.password} numberOfLines={1}>
-          {visiblePasswords.has(item.id)
-            ? decryptedPasswords[item.id] || '***'
-            : '••••••••••••'}
-        </Text>
-        <TouchableOpacity
-          style={styles.iconButton}
-          onPress={() => authenticateAndShow(item.id)}
-        >
-          <Ionicons
-            name={visiblePasswords.has(item.id) ? 'eye-off' : 'eye'}
-            size={20}
-            color="#6B7280"
-          />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.iconButton}
-          onPress={() => copyPassword(item.id)}
-        >
-          <Ionicons name="copy-outline" size={20} color="#6B7280" />
-        </TouchableOpacity>
-      </View>
-
-      {item.website_url && (
-        <Text style={styles.website} numberOfLines={1}>
-          {item.website_url}
-        </Text>
-      )}
-
-      {item.notes && (
-        <Text style={styles.notes} numberOfLines={2}>
-          {item.notes}
-        </Text>
-      )}
-    </View>
-  );
+  }, [passwords, decryptedPasswords]);
 
   if (loading) {
     return (
@@ -878,21 +928,32 @@ export default function PasswordsScreen() {
               {/* PC에서만 추가 가능하도록 버튼 제거됨 */}
               <TouchableOpacity
                 style={styles.lockButton}
-                onPress={() => {
-                  cryptoManager.lock();
-                  setIsLocked(true);
-                  setDecryptedPasswords({});
-                  setVisiblePasswords(new Set());
-                }}
+                onPress={lockAndClearData}
               >
                 <Ionicons name="lock-closed" size={16} color="#6B7280" />
               </TouchableOpacity>
             </View>
+            <TouchableOpacity
+               style={styles.addButton}
+               onPress={openAddModal}
+             >
+               <Ionicons name="add" size={24} color="#fff" />
+             </TouchableOpacity>
           </View>
 
           <FlatList
             data={passwords}
-            renderItem={renderItem}
+            renderItem={({ item }) => (
+              <PasswordItem 
+                item={item} 
+                isVisible={visiblePasswords.has(item.id)}
+                decryptedPassword={decryptedPasswords[item.id]}
+                onToggleVisibility={authenticateAndShow}
+                onCopy={copyPassword}
+                onEdit={openEditModal}
+                onDelete={handleDelete}
+              />
+            )}
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.list}
             refreshControl={
