@@ -2,6 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
+
+// 베타 버전: 모든 기능 무제한 사용 가능
+// 출시 시 false로 변경
+const BETA_MODE = true;
+
 import type {
   Subscription,
   Plan,
@@ -135,6 +140,11 @@ export function useSubscription(): UseSubscriptionReturn {
   // 사용량 제한 체크
   const checkLimit = useCallback(
     (feature: keyof PlanLimits) => {
+      // 베타 모드: 모든 기능 무제한
+      if (BETA_MODE) {
+        return { allowed: true, current: 0, limit: -1, remaining: -1 };
+      }
+
       const { plan, usage } = state;
 
       // 플랜 정보가 로딩되지 않았으면 일단 차단 (안전하게)
@@ -163,6 +173,10 @@ export function useSubscription(): UseSubscriptionReturn {
   // 기능 활성화 여부 확인
   const hasFeature = useCallback(
     (feature: keyof PlanFeatures) => {
+      // 베타 모드: 모든 기능 활성화
+      if (BETA_MODE) {
+        return true;
+      }
       return state.plan?.features[feature] ?? false;
     },
     [state.plan]
@@ -173,8 +187,9 @@ export function useSubscription(): UseSubscriptionReturn {
     refetch: fetchSubscription,
     checkLimit,
     hasFeature,
-    isPro: state.plan?.name === 'pro',
-    isBusiness: state.plan?.name === 'business',
-    isFree: state.plan?.name === 'free' || !state.plan,
+    // 베타 모드: Pro 권한으로 취급
+    isPro: BETA_MODE || state.plan?.name === 'pro',
+    isBusiness: BETA_MODE || state.plan?.name === 'business',
+    isFree: BETA_MODE ? false : (state.plan?.name === 'free' || !state.plan),
   };
 }

@@ -76,15 +76,48 @@ function matchesSignature(bytes: Uint8Array, signature: number[]): boolean {
 }
 
 /**
+ * SVG 파일 내 위험 요소 검사 (XSS 방지)
+ */
+async function validateSvgSecurity(file: File): Promise<boolean> {
+  const text = await file.text();
+
+  // SVG 형식 확인
+  if (!text.includes('<svg') && !text.includes('<?xml')) {
+    return false;
+  }
+
+  // 위험 요소 패턴 검사
+  const dangerousPatterns = [
+    /<script/i,                    // 스크립트 태그
+    /javascript:/i,                // javascript: 프로토콜
+    /on\w+\s*=/i,                  // onclick, onerror 등 이벤트 핸들러
+    /<iframe/i,                    // iframe 삽입
+    /<object/i,                    // object 삽입
+    /<embed/i,                     // embed 삽입
+    /<foreignObject/i,             // foreignObject (HTML 삽입 가능)
+    /data:\s*text\/html/i,         // data URI로 HTML 삽입
+    /xlink:href\s*=\s*["']?javascript:/i,  // xlink:href로 JS 실행
+    /href\s*=\s*["']?javascript:/i,        // href로 JS 실행
+  ];
+
+  for (const pattern of dangerousPatterns) {
+    if (pattern.test(text)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
  * 파일의 실제 타입 검증 (Magic Bytes 기반)
  */
 async function validateMagicBytesForType(file: File, mimeType: string): Promise<boolean> {
   const signatures = FILE_SIGNATURES[mimeType];
 
-  // SVG는 텍스트 기반이므로 별도 처리
+  // SVG는 텍스트 기반이므로 보안 검증 포함
   if (mimeType === 'image/svg+xml') {
-    const text = await file.slice(0, 1000).text();
-    return text.includes('<svg') || text.includes('<?xml');
+    return validateSvgSecurity(file);
   }
 
   // 시그니처가 정의되지 않은 타입은 통과

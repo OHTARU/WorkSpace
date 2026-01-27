@@ -6,19 +6,21 @@ import 'text-encoding';
  * @noble/ciphers와 @noble/hashes를 사용하여 순수 JS 환경(Expo Go)에서도
  * 동작하는 AES-256-GCM 암호화 및 PBKDF2 키 파생을 제공합니다.
  *
- * shared/utils/crypto.ts의 공통 상수와 인터페이스를 사용합니다.
+ * Web Crypto API와 호환되도록 구현되었습니다.
  */
 
 import { gcm } from '@noble/ciphers/aes';
 import { pbkdf2 } from '@noble/hashes/pbkdf2.js';
 import { sha256 } from '@noble/hashes/sha2.js';
-import * as Crypto from 'expo-crypto';
 import { InteractionManager } from 'react-native';
 
 // 공통 상수 (shared/utils/crypto.ts와 동일)
 const SALT_LENGTH = 32;
 const IV_LENGTH = 12;
+// 기존 데이터 호환을 위해 100,000 유지
+// TODO: 마이그레이션 로직 추가 후 310,000으로 업그레이드
 const PBKDF2_ITERATIONS = 100000;
+const PBKDF2_ITERATIONS_NEW = 310000;
 
 // 공통 인터페이스 (shared/utils/crypto.ts와 동일)
 interface EncryptedData {
@@ -60,65 +62,25 @@ function base64ToBuffer(base64: string): Uint8Array {
 
 // ============================================
 // 모바일 전용 CryptoManager (JS Implementation)
+// Web Crypto API와 호환
 // ============================================
 
 export class CryptoManager implements ICryptoManager {
   private key: Uint8Array | null = null;
 
   /**
-   * PBKDF2로 키 파생 (Standard - JS)
-   * @noble/hashes 사용
+   * PBKDF2로 키 파생 (Standard - Web Crypto API 호환)
+   * @noble/hashes 사용, password를 명시적으로 UTF-8 인코딩
    */
   private async deriveKey(password: string, salt: Uint8Array): Promise<Uint8Array> {
     try {
-      // pbkdf2는 동기적으로 동작하지만 InteractionManager로 감싸서 실행되므로
-      // UI 블로킹을 최소화할 수 있음.
-      const keyBuffer = pbkdf2(sha256, password, salt, { c: PBKDF2_ITERATIONS, dkLen: 32 });
+      // Web Crypto API와 동일하게 password를 UTF-8 바이트로 변환
+      const passwordBytes = new TextEncoder().encode(password);
+      const keyBuffer = pbkdf2(sha256, passwordBytes, salt, {
+        c: PBKDF2_ITERATIONS,
+        dkLen: 32
+      });
       return keyBuffer;
-    } catch (error) {
-      console.error('Key derivation failed:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * PBKDF2로 키 파생 (Legacy - 이전 버전 버그 호환용)
-   * 잘못 구현된 커스텀 루프 방식 (속도 개선 불가능, 마이그레이션용)
-   */
-  private async deriveKeyLegacy(password: string, salt: Uint8Array): Promise<Uint8Array> {
-    try {
-      // expo-crypto의 PBKDF2 사용
-      const key = await Crypto.digestStringAsync(
-        Crypto.CryptoDigestAlgorithm.SHA256,
-        password + bufferToBase64(salt),
-        { encoding: Crypto.CryptoEncoding.HEX }
-      );
-
-      // Hex 문자열을 Uint8Array로 변환 (32 bytes = 256 bits)
-      const keyBytes = new Uint8Array(32);
-      for (let i = 0; i < 32; i++) {
-        keyBytes[i] = parseInt(key.substr(i * 2, 2), 16);
-      }
-
-      // 추가 반복을 위해 PBKDF2 시뮬레이션
-      let derivedKey = keyBytes;
-      for (let i = 0; i < PBKDF2_ITERATIONS / 1000; i++) {
-        const combined = new Uint8Array(derivedKey.length + salt.length);
-        combined.set(derivedKey);
-        combined.set(salt, derivedKey.length);
-
-        const hash = await Crypto.digestStringAsync(
-          Crypto.CryptoDigestAlgorithm.SHA256,
-          bufferToBase64(combined),
-          { encoding: Crypto.CryptoEncoding.HEX }
-        );
-
-        for (let j = 0; j < 32; j++) {
-          derivedKey[j] = parseInt(hash.substr(j * 2, 2), 16);
-        }
-      }
-
-      return derivedKey;
     } catch (error) {
       console.error('Key derivation failed:', error);
       throw error;
@@ -135,11 +97,10 @@ export class CryptoManager implements ICryptoManager {
   }
 
   /**
-   * 마스터 비밀번호로 잠금 해제 (Standard)
+   * 마스터 비밀번호로 잠금 해제
    */
   unlock(masterPassword: string, saltBase64: string): Promise<boolean> {
     return new Promise((resolve) => {
-      // UI 렌더링을 차단하지 않도록 InteractionManager 사용
       InteractionManager.runAfterInteractions(() => {
         setTimeout(async () => {
           try {
@@ -150,29 +111,16 @@ export class CryptoManager implements ICryptoManager {
             console.error('Crypto unlock failed:', error);
             resolve(false);
           }
-        }, 50); // 딜레이 단축
+        }, 50);
       });
     });
   }
 
   /**
-   * 마스터 비밀번호로 잠금 해제 (Legacy)
+   * Legacy unlock (호환성을 위해 유지, Standard와 동일)
    */
   unlockLegacy(masterPassword: string, saltBase64: string): Promise<boolean> {
-    return new Promise((resolve) => {
-      InteractionManager.runAfterInteractions(() => {
-        setTimeout(async () => {
-          try {
-            const salt = base64ToBuffer(saltBase64);
-            this.key = await this.deriveKeyLegacy(masterPassword, salt);
-            resolve(true);
-          } catch (error) {
-            console.error('Crypto unlock legacy failed:', error);
-            resolve(false);
-          }
-        }, 100);
-      });
-    });
+    return this.unlock(masterPassword, saltBase64);
   }
 
   /**
@@ -190,7 +138,7 @@ export class CryptoManager implements ICryptoManager {
   }
 
   /**
-   * 암호화 (AES-256-GCM - JS)
+   * 암호화 (AES-256-GCM - Web Crypto API 호환)
    */
   encrypt(plaintext: string): Promise<EncryptedData | null> {
     return new Promise((resolve) => {
@@ -207,8 +155,8 @@ export class CryptoManager implements ICryptoManager {
 
           const aes256 = gcm(key, iv);
           const plaintextBytes = new TextEncoder().encode(plaintext);
-          
-          // @noble/ciphers encrypt returns ciphertext + authTag (concatenated)
+
+          // @noble/ciphers encrypt: ciphertext + authTag (Web Crypto API와 동일)
           const encryptedWithTag = aes256.encrypt(plaintextBytes);
 
           resolve({
@@ -224,7 +172,7 @@ export class CryptoManager implements ICryptoManager {
   }
 
   /**
-   * 복호화 (AES-256-GCM - JS)
+   * 복호화 (AES-256-GCM - Web Crypto API 호환)
    */
   decrypt(encryptedBase64: string, ivBase64: string): Promise<string | null> {
     return new Promise((resolve) => {
@@ -240,14 +188,15 @@ export class CryptoManager implements ICryptoManager {
           const iv = base64ToBuffer(ivBase64);
 
           const aes256 = gcm(key, iv);
-          
-          // @noble/ciphers decrypt expects ciphertext + authTag
+
+          // @noble/ciphers decrypt: ciphertext + authTag (Web Crypto API와 동일)
           const decryptedBytes = aes256.decrypt(encryptedWithTag);
           const decrypted = new TextDecoder().decode(decryptedBytes);
 
           resolve(decrypted || null);
         } catch (error) {
-          // Decryption failed (wrong key or corrupted data).
+          // Decryption failed (wrong key or corrupted data)
+          console.error('Decryption failed:', error);
           resolve(null);
         }
       });
@@ -258,5 +207,5 @@ export class CryptoManager implements ICryptoManager {
 // 싱글톤 인스턴스 export
 export const cryptoManager = new CryptoManager();
 
-// 타입 export (다른 곳에서 사용할 수 있도록)
+// 타입 export
 export type { EncryptedData, ICryptoManager };

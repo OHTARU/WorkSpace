@@ -57,14 +57,36 @@ serve(async (req) => {
     console.log(`Deleting account for user: ${userId}`);
 
     // 1. Storage에서 사용자 파일 삭제
-    const { data: storageFiles } = await supabaseAdmin.storage
-      .from('clipboard-media')
-      .list(userId);
+    let storageDeleteSuccess = true;
+    try {
+      const { data: storageFiles, error: listError } = await supabaseAdmin.storage
+        .from('clipboard-media')
+        .list(userId);
 
-    if (storageFiles && storageFiles.length > 0) {
-      const filePaths = storageFiles.map((f) => `${userId}/${f.name}`);
-      await supabaseAdmin.storage.from('clipboard-media').remove(filePaths);
-      console.log(`Deleted ${filePaths.length} storage files`);
+      if (listError) {
+        console.error('Failed to list storage files:', listError);
+        storageDeleteSuccess = false;
+      } else if (storageFiles && storageFiles.length > 0) {
+        const filePaths = storageFiles.map((f) => `${userId}/${f.name}`);
+        const { error: removeError } = await supabaseAdmin.storage
+          .from('clipboard-media')
+          .remove(filePaths);
+
+        if (removeError) {
+          console.error('Failed to delete storage files:', removeError);
+          storageDeleteSuccess = false;
+        } else {
+          console.log(`Deleted ${filePaths.length} storage files`);
+        }
+      }
+    } catch (storageError) {
+      console.error('Storage deletion error:', storageError);
+      storageDeleteSuccess = false;
+    }
+
+    // Storage 삭제 실패 시 경고 (계속 진행하되 로그에 기록)
+    if (!storageDeleteSuccess) {
+      console.warn('Storage deletion had issues, but continuing with account deletion');
     }
 
     // 2. 모든 사용자 데이터 삭제 (순서대로)
