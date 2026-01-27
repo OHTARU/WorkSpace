@@ -2,6 +2,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 
+// 베타 버전: 모든 기능 무제한 사용 가능
+// 출시 시 false로 변경
+const BETA_MODE = true;
+
 interface Plan {
   id: string;
   name: string;
@@ -148,6 +152,11 @@ export function useSubscription(): UseSubscriptionReturn {
   // 제한 체크 함수
   const checkLimit = useCallback(
     (feature: string): LimitCheckResult => {
+      // 베타 모드: 모든 기능 무제한
+      if (BETA_MODE) {
+        return { allowed: true, current: 0, limit: -1, remaining: -1 };
+      }
+
       if (!plan) {
         return { allowed: false, current: 0, limit: 0, remaining: 0 };
       }
@@ -173,6 +182,10 @@ export function useSubscription(): UseSubscriptionReturn {
   // 기능 활성화 여부 확인
   const hasFeature = useCallback(
     (feature: string): boolean => {
+      // 베타 모드: 모든 기능 활성화
+      if (BETA_MODE) {
+        return true;
+      }
       return plan?.features[feature] ?? false;
     },
     [plan]
@@ -187,8 +200,9 @@ export function useSubscription(): UseSubscriptionReturn {
     checkLimit,
     hasFeature,
     refetch: fetchSubscription,
-    isPro: plan?.name === 'pro',
-    isBusiness: plan?.name === 'business',
-    isFree: plan?.name === 'free' || !plan,
+    // 베타 모드: Pro 권한으로 취급
+    isPro: BETA_MODE || plan?.name === 'pro',
+    isBusiness: BETA_MODE || plan?.name === 'business',
+    isFree: BETA_MODE ? false : (plan?.name === 'free' || !plan),
   };
 }

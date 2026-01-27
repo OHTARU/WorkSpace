@@ -17,8 +17,10 @@ import { InteractionManager } from 'react-native';
 // 공통 상수 (shared/utils/crypto.ts와 동일)
 const SALT_LENGTH = 32;
 const IV_LENGTH = 12;
-// OWASP 2023 권장: 310,000 iterations for PBKDF2-HMAC-SHA256
-const PBKDF2_ITERATIONS = 310000;
+// 기존 데이터 호환을 위해 100,000 유지
+// TODO: 마이그레이션 로직 추가 후 310,000으로 업그레이드
+const PBKDF2_ITERATIONS = 100000;
+const PBKDF2_ITERATIONS_NEW = 310000;
 
 // 공통 인터페이스 (shared/utils/crypto.ts와 동일)
 interface EncryptedData {

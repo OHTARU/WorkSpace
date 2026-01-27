@@ -1,4 +1,8 @@
 {
+  "react-native-google-mobile-ads": {
+    "android_app_id": "ca-app-pub-5539584331662815~4452343646",
+    "ios_app_id": "ca-app-pub-5539584331662815~4452343646"
+  },
   "expo": {
     "name": "WorkSync Mobile",
     "slug": "worksync-mobile-2026",

@@ -21,8 +21,10 @@ export const SALT_LENGTH = 32;
 /** IV 길이 (GCM 권장: 12바이트) */
 export const IV_LENGTH = 12;
 
-/** PBKDF2 반복 횟수 (OWASP 2023 권장: 310,000 for SHA-256) */
-export const PBKDF2_ITERATIONS = 310000;
+/** PBKDF2 반복 횟수 - 기존 데이터 호환을 위해 100,000 유지 */
+// TODO: 마이그레이션 로직 추가 후 310,000으로 업그레이드
+export const PBKDF2_ITERATIONS = 100000;
+export const PBKDF2_ITERATIONS_NEW = 310000;
 
 /** AES 키 길이 (256-bit) */
 export const AES_KEY_LENGTH = 256;

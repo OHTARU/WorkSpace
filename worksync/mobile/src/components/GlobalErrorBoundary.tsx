@@ -1,6 +1,5 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView } from 'react-native';
-import * as Updates from 'expo-updates';
 import { Ionicons } from '@expo/vector-icons';
 
 interface Props {
@@ -28,13 +27,9 @@ export class GlobalErrorBoundary extends Component<Props, State> {
     this.setState({ errorInfo });
   }
 
-  handleRestart = async () => {
-    try {
-      await Updates.reloadAsync();
-    } catch (e) {
-      // If reload fails (e.g. in dev client), just reset state
-      this.setState({ hasError: false, error: null, errorInfo: null });
-    }
+  handleRestart = () => {
+    // Reset error state to allow app to recover
+    this.setState({ hasError: false, error: null, errorInfo: null });
   };
 
   render() {

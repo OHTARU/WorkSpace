@@ -1,7 +1,7 @@
 # WorkSync 코드 분석 및 수정 리포트
 
 **작성일:** 2026-01-26
-**최종 수정:** 2026-01-26
+**최종 수정:** 2026-01-27
 **프로젝트:** WorkSync (Web & Mobile)
 **분석 범위:** 전체 코드베이스 (Web, Mobile, Supabase Functions)
 
@@ -322,6 +322,17 @@ const path = clip.original_path || clip.media_url;  // (clip as any) 제거
 
 ### 4. 남은 보안 취약점
 
+### 4.0 Critical - 앱 크래시 원인 (수정 완료)
+
+| 항목 | 내용 |
+|------|------|
+| **파일** | `mobile/src/components/GlobalErrorBoundary.tsx` |
+| **문제** | `expo-updates` 패키지를 import하지만 package.json에 설치되어 있지 않음 |
+| **증상** | 앱 빌드 후 실행 시 즉시 크래시 (튕김) |
+| **조치** | **[완료]** expo-updates import 제거, 상태 초기화 방식으로 대체 |
+
+---
+
 ### 4.1 High - CSRF 보호 없음 (완료)
 
 | 항목 | 내용 |
@@ -363,7 +374,17 @@ const path = clip.original_path || clip.media_url;  // (clip as any) 제거
 | 14 | 서버 사이드 Rate Limiting | ✅ 완료 |
 
 ### 남은 작업
-*(모든 계획된 수정 작업이 완료되었습니다)*
+
+| # | 항목 | 심각도 | 상태 |
+|---|------|--------|------|
+| 1 | 앱 크래시 - expo-updates 누락 | CRITICAL | ✅ 완료 |
+| 2 | Client-Side Rate Limiting 우회 가능 | HIGH | 🔴 미완료 |
+| 3 | Middleware Rate Limiting 비효과적 | HIGH | 🔴 미완료 |
+| 4 | CSRF localhost 예외 취약점 | HIGH | 🔴 미완료 |
+| 5 | 마스터 비밀번호 강도 검증 부족 | MEDIUM | 🔴 미완료 |
+| 6 | 파일 업로드 서버사이드 검증 없음 | MEDIUM | 🔴 미완료 |
+| 7 | CSP unsafe-inline/unsafe-eval 사용 | LOW | 🔴 미완료 |
+| 8 | 에러 모니터링 미구현 | LOW | 🔴 미완료 |
 
 ---
 
@@ -373,11 +394,11 @@ const path = clip.original_path || clip.media_url;  // (clip as any) 제거
 
 | 심각도 | 발견 | 수정 완료 | 남은 항목 |
 |--------|-----|----------|----------|
-| Critical | 0 | 0 | 0 |
-| High | 7 | **7** | 0 |
-| Medium | 9 | **9** | 0 |
-| Low | 4 | **4** | 0 |
-| **합계** | **20** | **20** | **0** |
+| Critical | 1 | **1** | 0 |
+| High | 10 | **7** | **3** |
+| Medium | 11 | **9** | **2** |
+| Low | 6 | **4** | **2** |
+| **합계** | **28** | **21** | **7** |
 
 ### 6.2 수정으로 인한 개선 효과
 
@@ -413,4 +434,161 @@ const path = clip.original_path || clip.media_url;  // (clip as any) 제거
 
 ---
 
-*이 리포트는 2026-01-26에 생성 및 업데이트되었습니다.*
+---
+
+## 7. 추가 발견 취약점 (2026-01-27)
+
+### 7.1 Critical - 앱 크래시 원인 (수정 완료)
+
+**파일:** `mobile/src/components/GlobalErrorBoundary.tsx`
+
+**문제:**
+```typescript
+// 수정 전 - expo-updates가 설치되지 않아 앱 시작 시 크래시
+import * as Updates from 'expo-updates';
+
+handleRestart = async () => {
+  await Updates.reloadAsync();  // 패키지 없어서 크래시
+};
+```
+
+**수정:**
+```typescript
+// 수정 후 - expo-updates 의존성 제거
+handleRestart = () => {
+  this.setState({ hasError: false, error: null, errorInfo: null });
+};
+```
+
+**효과:** 앱 빌드 후 정상 실행
+
+---
+
+### 7.2 High - Client-Side Rate Limiting 우회 가능
+
+**파일:** `web/src/hooks/useRateLimit.ts:50-75`
+
+**문제:**
+```typescript
+// localStorage에 rate limit 상태 저장 - 사용자가 조작 가능
+const stored = localStorage.getItem(storageKey);
+localStorage.setItem(storageKey, JSON.stringify(state));
+```
+
+**위험:**
+- 브라우저 개발자 도구로 localStorage 삭제/수정 가능
+- 무제한 로그인/비밀번호 시도 가능
+- 브루트포스 공격에 취약
+
+**권장 조치:**
+- 서버사이드 rate limiting 구현 (Redis, Upstash)
+- 클라이언트 사이드는 UX 용도로만 사용
+
+---
+
+### 7.3 High - Middleware Rate Limiting 비효과적
+
+**파일:** `web/middleware.ts:7-24, 47-56`
+
+**문제:**
+```typescript
+// 인메모리 Map - Edge Runtime에서 인스턴스 간 상태 공유 안됨
+const rateLimit = new Map<string, { count: number; lastReset: number }>();
+```
+
+**위험:**
+- Serverless/Edge 환경에서 각 요청이 다른 인스턴스로 갈 수 있음
+- Rate limit 상태가 유지되지 않음
+- 실질적인 DDoS/브루트포스 방어 불가
+
+**권장 조치:**
+- Upstash Redis 또는 Vercel KV 사용
+- @upstash/ratelimit 패키지 도입
+
+---
+
+### 7.4 High - CSRF localhost 예외 취약점
+
+**파일:** `web/middleware.ts:33-45`
+
+**문제:**
+```typescript
+if (!origin.includes('localhost') && !origin.includes('127.0.0.1')) {
+  return new NextResponse(JSON.stringify({ message: 'Invalid Origin' }), { status: 403 });
+}
+```
+
+**위험:**
+- `includes()` 사용으로 `attacker.localhost.com` 우회 가능
+- 프로덕션에 개발용 예외 코드 존재
+
+**권장 조치:**
+```typescript
+// URL 객체로 정확한 호스트 비교
+const originUrl = new URL(origin);
+const hostUrl = new URL(`https://${host}`);
+if (originUrl.hostname !== hostUrl.hostname) { ... }
+// 프로덕션에서는 localhost 예외 제거
+```
+
+---
+
+### 7.5 Medium - 마스터 비밀번호 강도 검증 부족
+
+**파일:** `web/src/app/(dashboard)/dashboard/passwords/page.tsx:141-145`
+
+**문제:**
+```typescript
+if (masterPassword.length < 8) {
+  toast.error('마스터 비밀번호는 8자 이상이어야 합니다.');
+  return;
+}
+// "12345678" 같은 약한 비밀번호도 허용됨
+```
+
+**권장 조치:**
+- 최소 12자 이상
+- 대/소문자, 숫자, 특수문자 필수
+- zxcvbn 라이브러리로 강도 검사
+
+---
+
+### 7.6 Medium - 파일 업로드 서버사이드 검증 없음
+
+**파일:** `web/src/utils/fileValidation.ts:184-198`
+
+**문제:**
+- MIME type, 확장자는 클라이언트에서 조작 가능
+- 서버사이드 검증 없이 Storage에 업로드
+
+**권장 조치:**
+- Supabase Edge Function에서 파일 검증
+- Magic bytes 서버사이드 확인
+
+---
+
+### 7.7 Low - CSP unsafe-inline/unsafe-eval
+
+**파일:** `web/next.config.js:7-9`
+
+**문제:**
+```javascript
+"script-src 'self' 'unsafe-eval' 'unsafe-inline' ..."
+```
+
+- AdSense/Analytics를 위해 필요하지만 XSS 방어력 약화
+
+**권장 조치:**
+- Nonce 기반 CSP로 마이그레이션
+
+---
+
+## 부록: 추가 수정된 파일 (2026-01-27)
+
+| # | 파일 경로 | 수정 내용 |
+|---|----------|----------|
+| 11 | `mobile/src/components/GlobalErrorBoundary.tsx` | expo-updates 의존성 제거, 앱 크래시 해결 |
+
+---
+
+*이 리포트는 2026-01-26에 생성되고 2026-01-27에 업데이트되었습니다.*
