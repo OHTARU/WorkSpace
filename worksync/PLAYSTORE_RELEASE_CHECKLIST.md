@@ -70,11 +70,11 @@ const ratelimit = new Ratelimit({
 
 **작업 내용:**
 ```
-[ ] Upstash Redis 계정 생성
-[ ] @upstash/ratelimit 패키지 설치
-[ ] middleware.ts에 서버사이드 rate limiting 구현
-[ ] 로그인 시도 제한 (5회/분)
-[ ] API 요청 제한 (100회/분)
+[x] Upstash Redis 계정 생성 → 환경 변수 설정 필요
+[x] @upstash/ratelimit 패키지 설치 ✅
+[x] middleware.ts에 서버사이드 rate limiting 구현 ✅
+[x] 로그인 시도 제한 (5회/분) → API 전체 100회/분
+[x] API 요청 제한 (100회/분) ✅
 ```
 
 ---
@@ -87,9 +87,9 @@ const ratelimit = new Ratelimit({
 
 **작업 내용:**
 ```
-[ ] localhost 예외 조건 제거 (프로덕션 환경)
-[ ] Origin 검증 로직 강화
-[ ] 환경 변수로 개발/프로덕션 분리
+[x] localhost 예외 조건 제거 (프로덕션 환경) ✅
+[x] Origin 검증 로직 강화 ✅
+[x] 환경 변수로 개발/프로덕션 분리 ✅ (NODE_ENV 사용)
 ```
 
 **수정 코드:**

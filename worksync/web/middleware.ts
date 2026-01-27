@@ -1,16 +1,38 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+import { Ratelimit } from '@upstash/ratelimit';
+import { Redis } from '@upstash/redis';
 
-// 간단한 인메모리 Rate Limiter (Edge Runtime 호환)
-// 주의: 서버리스 환경에서는 인스턴스 간 상태가 공유되지 않으므로 완벽한 전역 제한은 아님.
-// 하지만 단일 인스턴스에 대한 DoS 공격을 완화하는 데 도움됨.
-const rateLimit = new Map<string, { count: number; lastReset: number }>();
+// ============================================
+// Rate Limiting 설정
+// ============================================
+
+// Upstash Redis 기반 Rate Limiter (서버리스 환경에서도 전역 상태 유지)
+let ratelimit: Ratelimit | null = null;
+
+// Upstash 환경 변수가 있으면 Redis 기반 rate limiter 사용
+if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+  const redis = new Redis({
+    url: process.env.UPSTASH_REDIS_REST_URL,
+    token: process.env.UPSTASH_REDIS_REST_TOKEN,
+  });
+
+  ratelimit = new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(100, '1 m'), // 1분당 100회
+    analytics: true,
+    prefix: 'worksync:ratelimit',
+  });
+}
+
+// Fallback: 인메모리 Rate Limiter (Upstash 미설정 시)
+const memoryRateLimit = new Map<string, { count: number; lastReset: number }>();
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1분
 const RATE_LIMIT_MAX = 100; // 1분당 100회 요청
 
-function checkRateLimit(ip: string) {
+function checkMemoryRateLimit(ip: string): boolean {
   const now = Date.now();
-  const record = rateLimit.get(ip) || { count: 0, lastReset: now };
+  const record = memoryRateLimit.get(ip) || { count: 0, lastReset: now };
 
   if (now - record.lastReset > RATE_LIMIT_WINDOW) {
     record.count = 0;
@@ -18,9 +40,21 @@ function checkRateLimit(ip: string) {
   }
 
   record.count++;
-  rateLimit.set(ip, record);
+  memoryRateLimit.set(ip, record);
 
   return record.count <= RATE_LIMIT_MAX;
+}
+
+// 통합 Rate Limit 체크 함수
+async function checkRateLimit(ip: string): Promise<{ success: boolean; remaining?: number }> {
+  // Upstash Redis가 설정되어 있으면 사용
+  if (ratelimit) {
+    const result = await ratelimit.limit(ip);
+    return { success: result.success, remaining: result.remaining };
+  }
+
+  // Fallback: 인메모리
+  return { success: checkMemoryRateLimit(ip) };
 }
 
 export async function middleware(request: NextRequest) {
@@ -34,23 +68,49 @@ export async function middleware(request: NextRequest) {
   if (request.nextUrl.pathname.startsWith('/api/') && request.method !== 'GET') {
     const origin = request.headers.get('origin');
     const host = request.headers.get('host');
-    
+
     // Origin 헤더가 존재하고, Host와 다르면 차단 (CSRF 공격 가능성)
-    if (origin && host && !origin.includes(host)) {
-      // 로컬 개발 환경(localhost) 예외 처리, Supabase Function 등 예외 필요 시 추가
-      if (!origin.includes('localhost') && !origin.includes('127.0.0.1')) {
-         return new NextResponse(JSON.stringify({ message: 'Invalid Origin' }), { status: 403 });
+    if (origin && host) {
+      try {
+        const originUrl = new URL(origin);
+        const isLocalDev = process.env.NODE_ENV === 'development' &&
+          (originUrl.hostname === 'localhost' || originUrl.hostname === '127.0.0.1');
+
+        // 프로덕션: 정확한 호스트 매칭 필요
+        // 개발: localhost 예외 허용
+        if (!isLocalDev && !origin.includes(host)) {
+          return new NextResponse(JSON.stringify({ message: 'Invalid Origin' }), {
+            status: 403,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+      } catch {
+        // URL 파싱 실패 시 차단
+        return new NextResponse(JSON.stringify({ message: 'Invalid Origin' }), {
+          status: 403,
+          headers: { 'Content-Type': 'application/json' }
+        });
       }
     }
   }
 
   // 2. Rate Limiting (API 요청에 대해)
   if (request.nextUrl.pathname.startsWith('/api/')) {
-    const ip = request.ip || 'unknown';
-    if (!checkRateLimit(ip)) {
-      return new NextResponse(JSON.stringify({ message: 'Too many requests' }), { 
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0] ||
+               request.headers.get('x-real-ip') ||
+               request.ip ||
+               'unknown';
+
+    const { success, remaining } = await checkRateLimit(ip);
+
+    if (!success) {
+      return new NextResponse(JSON.stringify({ message: 'Too many requests' }), {
         status: 429,
-        headers: { 'Retry-After': '60' } 
+        headers: {
+          'Content-Type': 'application/json',
+          'Retry-After': '60',
+          'X-RateLimit-Remaining': '0'
+        }
       });
     }
   }
