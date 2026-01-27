@@ -2,6 +2,9 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
+// 동적 렌더링 강제 (cookies 사용)
+export const dynamic = 'force-dynamic';
+
 // GET: 현재 사용자의 구독 정보 조회
 export async function GET() {
   try {
