@@ -1,7 +1,0 @@
-{
-  "version": 2,
-  "framework": "nextjs",
-  "buildCommand": "cd worksync/web && npm install && npm run build",
-  "outputDirectory": "worksync/web/.next",
-  "installCommand": "cd worksync/web && npm install"
-}
