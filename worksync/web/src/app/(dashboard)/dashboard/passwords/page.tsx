@@ -333,7 +333,7 @@ export default function PasswordsPage() {
       user_id: userId,
       service_name: sanitizedServiceName,
       username: sanitizedUsername,
-      password_encrypted: encrypted.encrypted,
+      password_encrypted: encrypted.ciphertext,
       iv: encrypted.iv,
       website_url: sanitizedUrl,
       notes: sanitizedNotes,
