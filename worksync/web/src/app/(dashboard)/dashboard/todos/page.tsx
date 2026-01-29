@@ -357,12 +357,14 @@ export default function TodosPage() {
       );
       toast.error('상태 변경에 실패했습니다.');
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const deleteTodo = useCallback(async (id: string) => {
     const { error } = await supabase.from('todos').delete().eq('id', id);
     if (error) toast.error('삭제에 실패했습니다.');
     else toast.success('삭제되었습니다.');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const deleteProject = async (id: string) => {

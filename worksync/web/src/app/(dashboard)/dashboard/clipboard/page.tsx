@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
 import { Plus, Trash2, Copy, Pin, PinOff, Monitor, Upload, Image as ImageIcon, Video, Download } from 'lucide-react';
 import { usePagination } from '@/hooks/usePagination';
@@ -569,11 +570,15 @@ export default function ClipboardPage() {
                     {isMedia && clip.media_url ? (
                       <div className="mt-2 mb-2">
                         {clip.content_type === 'image' ? (
-                          <img
-                            src={clip.media_url}
-                            alt="클립보드 이미지"
-                            className="w-full sm:max-w-md max-h-48 sm:max-h-64 rounded-lg object-contain bg-gray-100"
-                          />
+                          <div className="relative w-full sm:max-w-md h-48 sm:h-64">
+                            <Image
+                              src={clip.media_url}
+                              alt="클립보드 이미지"
+                              fill
+                              className="rounded-lg object-contain bg-gray-100"
+                              unoptimized
+                            />
+                          </div>
                         ) : (
                           <video
                             src={clip.media_url}

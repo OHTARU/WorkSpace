@@ -65,6 +65,7 @@ export default function PasswordsPage() {
 
   useEffect(() => {
     checkUser();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -88,6 +89,7 @@ export default function PasswordsPage() {
         supabase.removeChannel(channel);
       };
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isReady, userId]);
 
   const checkUser = async () => {

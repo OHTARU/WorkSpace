@@ -16,7 +16,7 @@ export interface EncryptedData {
 export interface ICryptoManager {
   encrypt: (plaintext: string) => Promise<EncryptedData | null>;
   decrypt: (encryptedBase64: string, ivBase64: string) => Promise<string | null>;
-  unlock: (masterPassword: string, saltBase64: string) => Promise<boolean>;
+  unlock: (masterPassword: string, saltBase64: string, iterations?: number) => Promise<boolean>;
   lock: () => void;
   isUnlocked: () => boolean;
   generateSalt: () => string;
@@ -85,7 +85,7 @@ export function useCrypto() {
    * 키 파생 함수 (PBKDF2)
    * 사용자의 비밀번호로부터 강력한 암호화 키를 생성합니다.
    */
-  const deriveKey = async (password: string, salt: Uint8Array): Promise<CryptoKey> => {
+  const deriveKey = async (password: string, salt: Uint8Array, iterations: number = PBKDF2_ITERATIONS): Promise<CryptoKey> => {
     // 1. 비밀번호를 키 재료로 변환
     const keyMaterial = await crypto.subtle.importKey(
       'raw',
@@ -100,7 +100,7 @@ export function useCrypto() {
       {
         name: 'PBKDF2',
         salt: salt,
-        iterations: PBKDF2_ITERATIONS,
+        iterations: iterations,
         hash: 'SHA-256'
       },
       keyMaterial,
@@ -113,15 +113,15 @@ export function useCrypto() {
   /**
    * 마스터 비밀번호로 잠금 해제 (키 생성)
    */
-  const unlock = useCallback(async (masterPassword: string, saltBase64: string): Promise<boolean> => {
+  const unlock = useCallback(async (masterPassword: string, saltBase64: string, iterations?: number): Promise<boolean> => {
     try {
       const salt = base64ToBuffer(saltBase64);
-      const key = await deriveKey(masterPassword, salt);
+      const key = await deriveKey(masterPassword, salt, iterations);
 
       setCryptoKey(key);
       setIsReady(true);
       setIsLocked(false);
-      
+
       // 세션 스토리지에 플래그 설정 (새로고침 시 유지용 로직 등에서 사용 가능)
       sessionStorage.setItem('worksync_unlocked', 'true');
 
@@ -130,6 +130,7 @@ export function useCrypto() {
       logger.error('Unlock failed:', error);
       return false;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /**
@@ -241,6 +242,7 @@ export function useCrypto() {
     } catch {
       return false;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return {
