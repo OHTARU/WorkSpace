@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Plus, Trash2, Copy, Pin, PinOff, Monitor, Upload, Image as ImageIcon, Video, Download } from 'lucide-react';
 import { usePagination } from '@/hooks/usePagination';
@@ -54,7 +54,75 @@ export default function ClipboardPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
   const pagination = usePagination({ initialPageSize: 20 });
+  const { offset, pageSize, setTotalCount } = pagination;
   const { checkLimit, isFree } = useSubscription();
+
+  const fetchClipboards = useCallback(async () => {
+    if (!userId) return;
+
+    setLoading(true);
+
+    // 먼저 총 개수 조회
+    const { count, error: countError } = await supabase
+      .from('clipboards')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId);
+
+    if (countError) {
+      toast.error('클립보드 목록을 불러오는데 실패했습니다.');
+      setLoading(false);
+      return;
+    }
+
+    setTotalCount(count || 0);
+
+    // 페이지네이션으로 데이터 조회
+    const { data, error } = await supabase
+      .from('clipboards')
+      .select('*')
+      .eq('user_id', userId)
+      .order('is_pinned', { ascending: false })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + pageSize - 1);
+
+    if (error) {
+      toast.error('클립보드 목록을 불러오는데 실패했습니다.');
+    } else {
+      // Signed URL 생성 (에러 핸들링 포함)
+      try {
+        const signedData = await Promise.all((data || []).map(async (item) => {
+          if (item.media_url && (item.content_type === 'image' || item.content_type === 'video')) {
+            try {
+              const { data: signed, error: signedError } = await supabase.storage
+                .from('clipboard-media')
+                .createSignedUrl(item.media_url, 3600); // 1시간 유효
+
+              if (signedError) {
+                logger.error('Failed to create signed URL:', signedError);
+                return { ...item, original_path: item.media_url };
+              }
+
+              if (signed) {
+                return { ...item, original_path: item.media_url, media_url: signed.signedUrl };
+              }
+            } catch (urlError) {
+              logger.error('Error creating signed URL for item:', urlError);
+              return { ...item, original_path: item.media_url };
+            }
+          }
+          return { ...item, original_path: item.media_url };
+        }));
+        setClipboards(signedData);
+      } catch (signedUrlError) {
+        logger.error('Failed to process signed URLs:', signedUrlError);
+        // 실패 시에도 원본 데이터는 표시
+        const fallbackData = (data || []).map(item => ({ ...item, original_path: item.media_url }));
+        setClipboards(fallbackData);
+        toast.error('일부 미디어를 불러오는데 실패했습니다.');
+      }
+    }
+    setLoading(false);
+  }, [userId, offset, pageSize, setTotalCount, supabase]);
 
   // 사용자 확인
   useEffect(() => {
@@ -65,14 +133,14 @@ export default function ClipboardPage() {
       }
     };
     checkUser();
-  }, []);
+  }, [supabase]);
 
   // userId나 페이지가 변경되면 데이터 조회
   useEffect(() => {
     if (userId) {
       fetchClipboards();
     }
-  }, [userId, pagination.page, pagination.pageSize]);
+  }, [userId, pagination.page, pagination.pageSize, fetchClipboards]);
 
   // Realtime 구독 (에러 핸들링 포함)
   useEffect(() => {
@@ -113,74 +181,7 @@ export default function ClipboardPage() {
         supabase.removeChannel(channel);
       }
     };
-  }, [userId]);
-
-  const fetchClipboards = async () => {
-    if (!userId) return;
-
-    setLoading(true);
-
-    // 먼저 총 개수 조회
-    const { count, error: countError } = await supabase
-      .from('clipboards')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId);
-
-    if (countError) {
-      toast.error('클립보드 목록을 불러오는데 실패했습니다.');
-      setLoading(false);
-      return;
-    }
-
-    pagination.setTotalCount(count || 0);
-
-    // 페이지네이션으로 데이터 조회
-    const { data, error } = await supabase
-      .from('clipboards')
-      .select('*')
-      .eq('user_id', userId)
-      .order('is_pinned', { ascending: false })
-      .order('created_at', { ascending: false })
-      .range(pagination.offset, pagination.offset + pagination.pageSize - 1);
-
-    if (error) {
-      toast.error('클립보드 목록을 불러오는데 실패했습니다.');
-    } else {
-      // Signed URL 생성 (에러 핸들링 포함)
-      try {
-        const signedData = await Promise.all((data || []).map(async (item) => {
-          if (item.media_url && (item.content_type === 'image' || item.content_type === 'video')) {
-            try {
-              const { data: signed, error: signedError } = await supabase.storage
-                .from('clipboard-media')
-                .createSignedUrl(item.media_url, 3600); // 1시간 유효
-
-              if (signedError) {
-                logger.error('Failed to create signed URL:', signedError);
-                return { ...item, original_path: item.media_url };
-              }
-
-              if (signed) {
-                return { ...item, original_path: item.media_url, media_url: signed.signedUrl };
-              }
-            } catch (urlError) {
-              logger.error('Error creating signed URL for item:', urlError);
-              return { ...item, original_path: item.media_url };
-            }
-          }
-          return { ...item, original_path: item.media_url };
-        }));
-        setClipboards(signedData);
-      } catch (signedUrlError) {
-        logger.error('Failed to process signed URLs:', signedUrlError);
-        // 실패 시에도 원본 데이터는 표시
-        const fallbackData = (data || []).map(item => ({ ...item, original_path: item.media_url }));
-        setClipboards(fallbackData);
-        toast.error('일부 미디어를 불러오는데 실패했습니다.');
-      }
-    }
-    setLoading(false);
-  };
+  }, [userId, fetchClipboards, supabase]);
 
   const addClipboard = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -449,11 +450,11 @@ export default function ClipboardPage() {
       {/* 클립보드 추가 폼 */}
       <form onSubmit={addClipboard} className="card mb-6">
         <div className="space-y-4">
-          <div className="flex gap-4">
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
             <select
               value={contentType}
               onChange={(e) => setContentType(e.target.value)}
-              className="input w-32"
+              className="input w-full sm:w-32"
             >
               <option value="text">텍스트</option>
               <option value="url">URL</option>
@@ -462,7 +463,7 @@ export default function ClipboardPage() {
             <button
               type="button"
               onClick={pasteFromClipboard}
-              className="btn btn-secondary"
+              className="btn btn-secondary w-full sm:w-auto"
             >
               클립보드에서 붙여넣기
             </button>
@@ -476,7 +477,7 @@ export default function ClipboardPage() {
             required
           />
 
-          <button type="submit" className="btn btn-primary flex items-center gap-2">
+          <button type="submit" className="btn btn-primary flex items-center justify-center gap-2 w-full sm:w-auto">
             <Plus size={20} />
             추가
           </button>
@@ -536,9 +537,9 @@ export default function ClipboardPage() {
                 key={clip.id}
                 className={`card ${clip.is_pinned ? 'border-primary-300 bg-primary-50/50' : ''}`}
               >
-                <div className="flex items-start gap-3">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-start gap-2 sm:gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mb-2">
                       <span className={`px-2 py-0.5 text-xs rounded-full flex items-center gap-1 ${
                         isMedia ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-600'
                       }`}>
@@ -559,7 +560,7 @@ export default function ClipboardPage() {
                           {clip.source_device === 'pc' ? 'PC' : '모바일'}
                         </span>
                       )}
-                      <span className="text-xs text-gray-400">
+                      <span className="text-xs text-gray-400 hidden sm:inline">
                         {new Date(clip.created_at).toLocaleString('ko-KR')}
                       </span>
                     </div>
@@ -571,13 +572,13 @@ export default function ClipboardPage() {
                           <img
                             src={clip.media_url}
                             alt="클립보드 이미지"
-                            className="max-w-md max-h-64 rounded-lg object-contain bg-gray-100"
+                            className="w-full sm:max-w-md max-h-48 sm:max-h-64 rounded-lg object-contain bg-gray-100"
                           />
                         ) : (
                           <video
                             src={clip.media_url}
                             controls
-                            className="max-w-md max-h-64 rounded-lg bg-black"
+                            className="w-full sm:max-w-md max-h-48 sm:max-h-64 rounded-lg bg-black"
                           />
                         )}
                       </div>

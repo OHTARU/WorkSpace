@@ -44,6 +44,17 @@
   - 모바일: 한도 도달 시 `Alert.alert()`로 업그레이드 유도 메시지 표시
   - Pro/Business 플랜: 모든 제한 해제 (무제한, limit=-1)
 
+### 1.6 추가 구현 사항 (1월 29일)
+- **버그 수정**: Android 이미지 저장(`MediaLibrary`) 오류 수정, Web CSRF 취약점 해결.
+- **보안 강화**:
+  - 마스터 비밀번호 검증 로직 표준화(Web/Mobile 공통, 강도 검사 강화).
+  - Storage 업로드 검증 강화(서버 사이드 MIME 타입 및 크기 제한).
+- **광고 수익화**:
+  - 모바일: AdMob 배너(상단 배치) 및 전면광고(이미지 저장 시) 적용. Pro 유저 숨김 처리.
+- **구독 및 결제 (Web)**:
+  - Stripe Checkout 세션 생성 및 Webhook 핸들러 구현 완료.
+  - 데이터베이스 자동 사용량 추적(Triggers) 구현 완료.
+
 ---
 
 ## 2. 구독 시스템 (구현 완료)
@@ -61,27 +72,33 @@
 ### 3.1 모바일 (Mobile)
 | 파일 경로 | 변경 내용 |
 |----------|----------|
-| `app/(tabs)/passwords.tsx` | 마스터 비밀번호 검증/저장 로직 개선, Rate Limit 적용, UI 개선, **구독 제한 체크 추가** |
+| `app/(tabs)/passwords.tsx` | 마스터 비밀번호 검증 로직 강화(shared validation), **구독 제한 체크** |
 | `app/(tabs)/urls.tsx` | 터치 영역 분리, 복사 기능 추가 |
-| `app/(tabs)/clipboard.tsx` | 갤러리 직접 저장(`expo-media-library`) 적용, **구독 제한 체크 추가** |
-| `app/(tabs)/todos.tsx` | **구독 제한 체크 추가 (프로젝트 생성 시)** |
-| `src/utils/crypto.ts` | 암호화 폴리필(`react-native-get-random-values`) 추가로 크래시 해결 |
-| `src/hooks/useSubscription.ts` | **[신규]** 모바일용 구독 훅 (checkLimit, hasFeature, isPro 등) |
+| `app/(tabs)/clipboard.tsx` | **Android 저장 오류 수정**, **전면광고(`InterstitialAd`) 적용** |
+| `app/(tabs)/_layout.tsx` | **배너광고(`BannerAd`) 상단 배치 및 구독 연동** |
+| `src/components/BannerAd.tsx` | **구독 상태(`isPro`)에 따른 조건부 렌더링** |
+| `src/hooks/useInterstitialAd.ts` | **[신규]** 전면광고 훅 구현 |
+| `src/utils/validation.ts` | **[신규]** 비밀번호 유효성 검사 로직 (Shared) |
 
 ### 3.2 웹 (Web)
 | 파일 경로 | 변경 내용 |
-|----------|----------|
-| `app/(dashboard)/dashboard/passwords/page.tsx` | `verifier` 로직 적용, Realtime 구독 추가, 이메일 누락 버그 수정, **구독 제한 체크 추가** |
-| `app/(dashboard)/dashboard/urls/page.tsx` | **구독 제한 체크 추가, UsageWarningBanner 적용** |
-| `app/(dashboard)/dashboard/clipboard/page.tsx` | **구독 제한 체크 추가, UsageWarningBanner 적용** |
-| `app/(dashboard)/dashboard/todos/page.tsx` | **구독 제한 체크 추가, UsageWarningBanner 적용** |
-| `components/subscription/UpgradeModal.tsx` | **[신규]** 한도 도달 시 업그레이드 유도 모달 |
-| `components/subscription/UsageWarningBanner.tsx` | **[신규]** 사용량 경고 배너 (80%/100%) |
+|----------|------|
+| `app/(dashboard)/dashboard/passwords/page.tsx` | **마스터 비밀번호 강도 검사 강화** |
+| `app/(dashboard)/dashboard/subscription/page.tsx` | **실제 결제(Stripe) 연동 및 플랜 표시** |
+| `app/api/checkout/route.ts` | **[신규]** Stripe Checkout 세션 생성 API |
+| `app/api/webhook/stripe/route.ts` | **[신규]** Stripe 구독 상태 동기화 Webhook |
+| `components/Sidebar.tsx` | **광고 배너(`AdSense`) 구독 상태 연동** |
+| `lib/stripe.ts` | **[신규]** Stripe 클라이언트 초기화 |
+| `middleware.ts` | **CSRF 취약점(Origin 검증) 수정** |
+| `shared/utils/validation.ts` | **[신규]** 비밀번호 유효성 검사 로직 |
 
 ### 3.3 데이터베이스
 | 파일 경로 | 설명 |
 |----------|------|
 | `supabase/migrations/006_reset_database.sql` | **[최신]** 전체 DB 초기화 및 올바른 스키마/정책 적용 스크립트 |
+| `supabase/migrations/007_storage_security.sql` | **[신규]** Storage 버킷 보안 강화 (MIME, Size 제한) |
+| `supabase/migrations/008_add_stripe_columns.sql` | **[신규]** Stripe 고객 ID 컬럼 추가 |
+| `supabase/migrations/009_automated_usage_tracking.sql` | **[신규]** 항목 추가/삭제 시 사용량 자동 집계 트리거 |
 
 ---
 
@@ -97,9 +114,14 @@
 - [x] **비밀번호 페이지**: 무료 플랜 20개 초과 시 추가 차단 로직 연결.
 - [x] **프로젝트/클립보드**: 각 제한 수치 적용.
 
-### 4.3 광고 수익화 (2순위)
-- [ ] **AdMob 연동**: 모바일 앱 내 배너/전면 광고 삽입.
-- [ ] **구독 연동**: Pro 플랜 이상 사용자에게는 광고 숨김 처리.
+### 4.3 광고 수익화 (완료)
+- [x] **AdMob 배너**: 모바일 앱(`BannerAd`)에 구독 상태(`isPro`) 연동 완료. Pro 유저에게는 숨김 처리.
+- [x] **AdMob 전면광고**: `saveMedia` (이미지 저장) 시점에 적용 완료.
+- [x] **구독 연동**: Pro 플랜 이상 사용자에게는 광고 숨김 처리 (완료).
+
+### 4.4 추가 개선 필요 사항
+- [ ] **배포**: Play Store / App Store 배포 프로세스 진행.
+- [ ] **테스트**: 전체 기능 E2E 테스트 및 베타 테스트 진행.
 
 ---
 

@@ -76,15 +76,14 @@ export async function middleware(request: NextRequest) {
         const isLocalDev = process.env.NODE_ENV === 'development' &&
           (originUrl.hostname === 'localhost' || originUrl.hostname === '127.0.0.1');
 
-        // 프로덕션: 정확한 호스트 매칭 필요
-        // 개발: localhost 예외 허용
-        if (!isLocalDev && !origin.includes(host)) {
-          return new NextResponse(JSON.stringify({ message: 'Invalid Origin' }), {
-            status: 403,
-            headers: { 'Content-Type': 'application/json' }
-          });
-        }
-      } catch {
+                  // 프로덕션: 정확한 호스트 매칭 필요
+                  // 개발: localhost 예외 허용
+                  if (!isLocalDev && originUrl.host !== host) {
+                    return new NextResponse(JSON.stringify({ message: 'Invalid Origin' }), {
+                      status: 403,
+                      headers: { 'Content-Type': 'application/json' }
+                    });
+                  }      } catch {
         // URL 파싱 실패 시 차단
         return new NextResponse(JSON.stringify({ message: 'Invalid Origin' }), {
           status: 403,

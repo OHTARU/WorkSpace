@@ -3,9 +3,10 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
-import { User, Mail, AlertTriangle } from 'lucide-react';
+import { User, Mail, AlertTriangle, ShieldCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { env } from '@/lib/env';
+import Link from 'next/link';
 import type { Profile } from '@shared/types';
 
 export default function ProfilePage() {
@@ -34,7 +35,8 @@ export default function ProfilePage() {
       .single();
 
     if (error) {
-      toast.error('프로필을 불러오는데 실패했습니다.');
+      console.error('Profile fetch error:', error);
+      toast.error(`프로필을 불러오는데 실패했습니다: ${error.message}`);
     } else if (data) {
       setProfile(data);
       setDisplayName(data.display_name || '');
@@ -113,6 +115,22 @@ export default function ProfilePage() {
   return (
     <div className="max-w-2xl">
       <h1 className="text-2xl font-bold text-gray-900 mb-8">프로필 설정</h1>
+
+      {/* 관리자 메뉴 (관리자에게만 표시) */}
+      {profile?.is_admin && (
+        <div className="card mb-6 border-indigo-200 bg-indigo-50/50">
+          <h2 className="text-lg font-semibold text-indigo-900 mb-4 flex items-center gap-2">
+            <ShieldCheck size={20} />
+            관리자 메뉴
+          </h2>
+          <p className="text-sm text-gray-600 mb-4">
+            모든 사용자의 현황을 조회하고 플랜을 관리할 수 있습니다.
+          </p>
+          <Link href="/admin" className="btn bg-indigo-600 text-white hover:bg-indigo-700 w-full flex justify-center">
+            관리자 대시보드 바로가기
+          </Link>
+        </div>
+      )}
 
       {/* 프로필 정보 */}
       <div className="card mb-6">
@@ -210,7 +228,7 @@ export default function ProfilePage() {
 
             <p className="text-gray-600 mb-4">
               이 작업은 되돌릴 수 없습니다. 모든 데이터가 영구적으로 삭제됩니다.
-              계속하려면 아래에 <strong>"회원탈퇴"</strong>를 입력하세요.
+              계속하려면 아래에 <strong>&quot;회원탈퇴&quot;</strong>를 입력하세요.
             </p>
 
             <input

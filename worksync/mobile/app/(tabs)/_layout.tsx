@@ -6,6 +6,9 @@ import { BannerAd } from '../../src/components/BannerAd';
 export default function TabLayout() {
   return (
     <View style={styles.container}>
+      <View style={styles.adContainer}>
+        <BannerAd />
+      </View>
       <Tabs
         screenOptions={{
           tabBarActiveTintColor: '#3B82F6',
@@ -81,9 +84,6 @@ export default function TabLayout() {
           }}
         />
       </Tabs>
-      <View style={styles.adContainer}>
-        <BannerAd />
-      </View>
     </View>
   );
 }
@@ -94,8 +94,8 @@ const styles = StyleSheet.create({
   },
   adContainer: {
     backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
     paddingVertical: 4,
   },
 });

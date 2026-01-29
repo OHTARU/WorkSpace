@@ -19,8 +19,8 @@ const SALT_LENGTH = 32;
 const IV_LENGTH = 12;
 // 기존 데이터 호환을 위해 100,000 유지
 // TODO: 마이그레이션 로직 추가 후 310,000으로 업그레이드
-const PBKDF2_ITERATIONS = 100000;
-const PBKDF2_ITERATIONS_NEW = 310000;
+export const PBKDF2_ITERATIONS = 100000;
+export const PBKDF2_ITERATIONS_NEW = 310000;
 
 // 공통 인터페이스 (shared/utils/crypto.ts와 동일)
 interface EncryptedData {
@@ -29,7 +29,7 @@ interface EncryptedData {
 }
 
 interface ICryptoManager {
-  unlock(masterPassword: string, saltBase64: string): Promise<boolean>;
+  unlock(masterPassword: string, saltBase64: string, iterations?: number): Promise<boolean>;
   unlockLegacy(masterPassword: string, saltBase64: string): Promise<boolean>;
   lock(): void;
   isUnlocked(): boolean;
@@ -72,12 +72,12 @@ export class CryptoManager implements ICryptoManager {
    * PBKDF2로 키 파생 (Standard - Web Crypto API 호환)
    * @noble/hashes 사용, password를 명시적으로 UTF-8 인코딩
    */
-  private async deriveKey(password: string, salt: Uint8Array): Promise<Uint8Array> {
+  private async deriveKey(password: string, salt: Uint8Array, iterations: number = PBKDF2_ITERATIONS): Promise<Uint8Array> {
     try {
       // Web Crypto API와 동일하게 password를 UTF-8 바이트로 변환
       const passwordBytes = new TextEncoder().encode(password);
       const keyBuffer = pbkdf2(sha256, passwordBytes, salt, {
-        c: PBKDF2_ITERATIONS,
+        c: iterations,
         dkLen: 32
       });
       return keyBuffer;
@@ -99,13 +99,13 @@ export class CryptoManager implements ICryptoManager {
   /**
    * 마스터 비밀번호로 잠금 해제
    */
-  unlock(masterPassword: string, saltBase64: string): Promise<boolean> {
+  unlock(masterPassword: string, saltBase64: string, iterations: number = PBKDF2_ITERATIONS): Promise<boolean> {
     return new Promise((resolve) => {
       InteractionManager.runAfterInteractions(() => {
         setTimeout(async () => {
           try {
             const salt = base64ToBuffer(saltBase64);
-            this.key = await this.deriveKey(masterPassword, salt);
+            this.key = await this.deriveKey(masterPassword, salt, iterations);
             resolve(true);
           } catch (error) {
             console.error('Crypto unlock failed:', error);

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { View, StyleSheet, Platform } from 'react-native';
 import { BannerAd as GoogleBannerAd, BannerAdSize, TestIds } from 'react-native-google-mobile-ads';
+import { useSubscription } from '../hooks/useSubscription';
 
 // 실제 광고 단위 ID
 const BANNER_AD_UNIT_ID = 'ca-app-pub-5539584331662815/6944659513';
@@ -14,6 +15,12 @@ interface BannerAdProps {
 
 export function BannerAd({ size = 'banner' }: BannerAdProps) {
   const [loaded, setLoaded] = useState(false);
+  const { isPro } = useSubscription();
+
+  // 구독자(Pro/Business)에게는 광고를 표시하지 않음
+  if (isPro) {
+    return null;
+  }
 
   const getBannerSize = () => {
     switch (size) {

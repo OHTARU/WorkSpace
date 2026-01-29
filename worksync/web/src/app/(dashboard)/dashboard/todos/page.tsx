@@ -79,14 +79,14 @@ const SortableTodoItem = memo(function SortableTodoItem({
     <div
       ref={setNodeRef}
       style={style}
-      className={`flex items-center gap-3 p-3 bg-white border rounded-lg ${
+      className={`flex items-start sm:items-center gap-2 sm:gap-3 p-2 sm:p-3 bg-white border rounded-lg ${
         todo.is_completed ? 'opacity-60' : ''
       }`}
     >
       <button
         {...attributes}
         {...listeners}
-        className="p-1 text-gray-400 hover:text-gray-600 cursor-grab"
+        className="p-1 text-gray-400 hover:text-gray-600 cursor-grab flex-shrink-0 hidden sm:block"
         aria-label="드래그하여 순서 변경"
       >
         <GripVertical size={16} />
@@ -96,33 +96,35 @@ const SortableTodoItem = memo(function SortableTodoItem({
         type="checkbox"
         checked={todo.is_completed}
         onChange={() => onToggle(todo.id, todo.is_completed)}
-        className="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+        className="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 flex-shrink-0 mt-0.5 sm:mt-0"
         aria-label={`${todo.title} 완료 체크`}
       />
 
-      <div className="flex-1">
-        <span className={todo.is_completed ? 'line-through text-gray-400' : 'text-gray-900'}>
+      <div className="flex-1 min-w-0">
+        <span className={`break-words ${todo.is_completed ? 'line-through text-gray-400' : 'text-gray-900'}`}>
           {todo.title}
         </span>
         {todo.target_date && (
-          <span className="ml-2 text-xs text-gray-500">
+          <span className="block sm:inline sm:ml-2 text-xs text-gray-500 mt-1 sm:mt-0">
             <Calendar size={12} className="inline mr-1" aria-hidden="true" />
             {todo.target_date}
           </span>
         )}
       </div>
 
-      <span className={`px-2 py-0.5 text-xs rounded-full ${PERIOD_COLORS[todo.period]}`}>
-        {PERIOD_LABELS[todo.period]}
-      </span>
+      <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+        <span className={`px-1.5 sm:px-2 py-0.5 text-xs rounded-full whitespace-nowrap ${PERIOD_COLORS[todo.period]}`}>
+          {PERIOD_LABELS[todo.period]}
+        </span>
 
-      <button
-        onClick={() => onDelete(todo.id)}
-        className="p-1 text-gray-400 hover:text-red-600"
-        aria-label={`${todo.title} 삭제`}
-      >
-        <Trash2 size={16} />
-      </button>
+        <button
+          onClick={() => onDelete(todo.id)}
+          className="p-1.5 sm:p-1 text-gray-400 hover:text-red-600"
+          aria-label={`${todo.title} 삭제`}
+        >
+          <Trash2 size={16} />
+        </button>
+      </div>
     </div>
   );
 });
@@ -150,7 +152,52 @@ export default function TodosPage() {
 
   const supabase = createClient();
   const pagination = usePagination({ initialPageSize: 10 });
+  const { offset, pageSize, setTotalCount } = pagination;
   const { checkLimit, isFree } = useSubscription();
+
+  const fetchData = useCallback(async () => {
+    if (!userId) return;
+
+    setLoading(true);
+
+    // 프로젝트 총 개수 조회
+    const { count: projectCount } = await supabase
+      .from('projects')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId);
+
+    setTotalCount(projectCount || 0);
+
+    // 페이지네이션으로 프로젝트 조회
+    const { data: projectsData } = await supabase
+      .from('projects')
+      .select('*')
+      .eq('user_id', userId)
+      .order('sort_order')
+      .range(offset, offset + pageSize - 1);
+
+    if (projectsData) {
+      setProjects(projectsData);
+      setExpandedProjects(new Set(projectsData.map((p) => p.id)));
+
+      // 현재 페이지의 프로젝트에 속한 todos만 조회
+      const projectIds = projectsData.map((p) => p.id);
+      if (projectIds.length > 0) {
+        const { data: todosData } = await supabase
+          .from('todos')
+          .select('*')
+          .eq('user_id', userId)
+          .in('project_id', projectIds)
+          .order('sort_order');
+
+        if (todosData) setTodos(todosData);
+      } else {
+        setTodos([]);
+      }
+    }
+
+    setLoading(false);
+  }, [userId, offset, pageSize, setTotalCount, supabase]);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -168,14 +215,14 @@ export default function TodosPage() {
       }
     };
     checkUser();
-  }, []);
+  }, [supabase]);
 
   // userId나 페이지가 변경되면 데이터 조회
   useEffect(() => {
     if (userId) {
       fetchData();
     }
-  }, [userId, pagination.page, pagination.pageSize]);
+  }, [userId, pagination.page, pagination.pageSize, fetchData]);
 
   // Realtime 구독 (에러 핸들링 포함)
   useEffect(() => {
@@ -210,51 +257,7 @@ export default function TodosPage() {
         supabase.removeChannel(channel);
       }
     };
-  }, [userId]);
-
-  const fetchData = async () => {
-    if (!userId) return;
-
-    setLoading(true);
-
-    // 프로젝트 총 개수 조회
-    const { count: projectCount } = await supabase
-      .from('projects')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId);
-
-    pagination.setTotalCount(projectCount || 0);
-
-    // 페이지네이션으로 프로젝트 조회
-    const { data: projectsData } = await supabase
-      .from('projects')
-      .select('*')
-      .eq('user_id', userId)
-      .order('sort_order')
-      .range(pagination.offset, pagination.offset + pagination.pageSize - 1);
-
-    if (projectsData) {
-      setProjects(projectsData);
-      setExpandedProjects(new Set(projectsData.map((p) => p.id)));
-
-      // 현재 페이지의 프로젝트에 속한 todos만 조회
-      const projectIds = projectsData.map((p) => p.id);
-      if (projectIds.length > 0) {
-        const { data: todosData } = await supabase
-          .from('todos')
-          .select('*')
-          .eq('user_id', userId)
-          .in('project_id', projectIds)
-          .order('sort_order');
-
-        if (todosData) setTodos(todosData);
-      } else {
-        setTodos([]);
-      }
-    }
-
-    setLoading(false);
-  };
+  }, [userId, fetchData, supabase]);
 
   const addProject = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -287,6 +290,14 @@ export default function TodosPage() {
   const addTodo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!userId) return;
+
+    // 할일 구독 제한 체크
+    const limit = checkLimit('todos');
+    if (!limit.allowed) {
+      setLimitInfo({ current: limit.current, limit: limit.limit });
+      setShowUpgradeModal(true);
+      return;
+    }
 
     const projectTodos = todos.filter((t) => t.project_id === selectedProjectId);
 
@@ -414,11 +425,11 @@ export default function TodosPage() {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">To-Do 리스트</h1>
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6 sm:mb-8">
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">To-Do 리스트</h1>
         <button
           onClick={() => setShowProjectModal(true)}
-          className="btn btn-primary flex items-center gap-2"
+          className="btn btn-primary flex items-center justify-center gap-2 w-full sm:w-auto"
         >
           <Plus size={20} />
           프로젝트 추가
@@ -427,11 +438,18 @@ export default function TodosPage() {
 
       {/* 사용량 경고 배너 */}
       {isFree && (
-        <UsageWarningBanner
-          feature="projects"
-          current={checkLimit('projects').current}
-          limit={checkLimit('projects').limit}
-        />
+        <>
+          <UsageWarningBanner
+            feature="projects"
+            current={checkLimit('projects').current}
+            limit={checkLimit('projects').limit}
+          />
+          <UsageWarningBanner
+            feature="todos"
+            current={checkLimit('todos').current}
+            limit={checkLimit('todos').limit}
+          />
+        </>
       )}
 
       {/* 프로젝트 목록 */}
@@ -448,7 +466,7 @@ export default function TodosPage() {
 
             return (
               <div key={project.id} className="card">
-                <div className="flex items-center gap-3 mb-4">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-4">
                   <button
                     onClick={() => toggleProject(project.id)}
                     className="p-1 hover:bg-gray-100 rounded"
@@ -459,36 +477,38 @@ export default function TodosPage() {
                   </button>
 
                   <div
-                    className="w-4 h-4 rounded"
+                    className="w-4 h-4 rounded flex-shrink-0"
                     style={{ backgroundColor: project.color }}
                   />
 
-                  <Folder size={20} className="text-gray-400" />
+                  <Folder size={20} className="text-gray-400 hidden sm:block" />
 
-                  <h2 className="font-semibold text-gray-900 flex-1">{project.name}</h2>
+                  <h2 className="font-semibold text-gray-900 flex-1 min-w-0 truncate">{project.name}</h2>
 
-                  <span className="text-sm text-gray-500">
-                    {completedCount}/{projectTodos.length} 완료
+                  <span className="text-xs sm:text-sm text-gray-500 flex-shrink-0">
+                    {completedCount}/{projectTodos.length}
                   </span>
 
-                  <button
-                    onClick={() => {
-                      setSelectedProjectId(project.id);
-                      setShowTodoModal(true);
-                    }}
-                    className="p-1 text-gray-400 hover:text-primary-600 hover:bg-gray-100 rounded"
-                    aria-label="할일 추가"
-                  >
-                    <Plus size={20} />
-                  </button>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => {
+                        setSelectedProjectId(project.id);
+                        setShowTodoModal(true);
+                      }}
+                      className="p-1.5 sm:p-1 text-gray-400 hover:text-primary-600 hover:bg-gray-100 rounded"
+                      aria-label="할일 추가"
+                    >
+                      <Plus size={18} />
+                    </button>
 
-                  <button
-                    onClick={() => deleteProject(project.id)}
-                    className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
-                    aria-label="프로젝트 삭제"
-                  >
-                    <Trash2 size={20} />
-                  </button>
+                    <button
+                      onClick={() => deleteProject(project.id)}
+                      className="p-1.5 sm:p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                      aria-label="프로젝트 삭제"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
                 </div>
 
                 {isExpanded && (
@@ -501,7 +521,7 @@ export default function TodosPage() {
                       items={projectTodos.map((t) => t.id)}
                       strategy={verticalListSortingStrategy}
                     >
-                      <div className="space-y-2 ml-8">
+                      <div className="space-y-2 ml-2 sm:ml-8">
                         {projectTodos.length === 0 ? (
                           <p className="text-sm text-gray-400 py-2">할일이 없습니다.</p>
                         ) : (

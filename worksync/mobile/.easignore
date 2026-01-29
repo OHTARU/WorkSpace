@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+.expo/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test
+coverage/
+__tests__/
+
+# Temp files
+*.tmp
+*.temp
+
+# Git
+.git/
+
+# Documentation
+*.md
+!README.md
+
+# Lock files (EAS will regenerate)
+# package-lock.json
+
+# Web specific
+web-build/

@@ -26,6 +26,9 @@ export function validateEnv(): void {
   if (!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
     missing.push('NEXT_PUBLIC_SUPABASE_ANON_KEY');
   }
+  if (!process.env.STRIPE_SECRET_KEY) {
+    missing.push('STRIPE_SECRET_KEY');
+  }
 
   if (missing.length > 0) {
     throw new Error(
@@ -43,6 +46,18 @@ export const env = {
   },
   get SUPABASE_ANON_KEY(): string {
     return checkValue(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, 'NEXT_PUBLIC_SUPABASE_ANON_KEY');
+  },
+  get STRIPE_SECRET_KEY(): string {
+    return checkValue(process.env.STRIPE_SECRET_KEY, 'STRIPE_SECRET_KEY');
+  },
+  get STRIPE_PUBLISHABLE_KEY(): string {
+    return checkValue(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY, 'NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY');
+  },
+  get STRIPE_WEBHOOK_SECRET(): string {
+    return checkValue(process.env.STRIPE_WEBHOOK_SECRET, 'STRIPE_WEBHOOK_SECRET');
+  },
+  get NEXT_URL(): string {
+    return process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
   },
   get NODE_ENV(): string {
     return process.env.NODE_ENV || 'development';

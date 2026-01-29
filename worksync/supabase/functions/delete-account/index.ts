@@ -3,6 +3,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0';
+import Stripe from 'https://esm.sh/stripe@13.10.0?target=deno';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -19,6 +20,7 @@ serve(async (req) => {
     // 환경 변수에서 Supabase 설정 가져오기
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY');
 
     // Service Role 클라이언트 (관리자 권한)
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
@@ -28,7 +30,7 @@ serve(async (req) => {
       },
     });
 
-    // 요청에서 Authorization 헤더 가져오기
+    // ... (사용자 인증 로직 동일)
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
       return new Response(
@@ -37,24 +39,40 @@ serve(async (req) => {
       );
     }
 
-    // 사용자 토큰으로 일반 클라이언트 생성
     const supabaseClient = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!, {
       global: {
         headers: { Authorization: authHeader },
       },
     });
 
-    // 현재 사용자 확인
     const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
     if (userError || !user) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid user token' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'Invalid user token' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const userId = user.id;
-    console.log(`Deleting account for user: ${userId}`);
+    console.log(`Processing account deletion for user: ${userId}`);
+
+    // 0. Stripe 구독 취소 (있는 경우)
+    if (stripeSecretKey) {
+      try {
+        const stripe = new Stripe(stripeSecretKey, { apiVersion: '2023-10-16', httpClient: Stripe.createFetchHttpClient() });
+        
+        const { data: subData } = await supabaseAdmin
+          .from('subscriptions')
+          .select('stripe_subscription_id')
+          .eq('user_id', userId)
+          .single();
+
+        if (subData?.stripe_subscription_id) {
+          console.log(`Canceling Stripe subscription: ${subData.stripe_subscription_id}`);
+          await stripe.subscriptions.cancel(subData.stripe_subscription_id);
+          console.log('Stripe subscription canceled');
+        }
+      } catch (stripeError) {
+        console.error('Stripe cancellation error (continuing):', stripeError);
+      }
+    }
 
     // 1. Storage에서 사용자 파일 삭제
     let storageDeleteSuccess = true;

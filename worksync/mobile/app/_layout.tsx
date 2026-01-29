@@ -1,6 +1,10 @@
 import 'react-native-gesture-handler';
 import 'react-native-url-polyfill/auto';
 import { decode, encode } from 'base-64';
+import { logger } from '../src/utils/logger';
+
+// Initialize Logger
+logger.init();
 
 // Base64 polyfill for React Native
 if (!global.btoa) {

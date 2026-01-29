@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef, memo } from 'react';
 import {
   View,
   Text,
-  FlatList,
   TouchableOpacity,
   StyleSheet,
   RefreshControl,
@@ -13,9 +12,10 @@ import {
   Platform,
   ScrollView,
   AppState,
-  AppStateStatus,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { FlashList } from '@shopify/flash-list';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as Clipboard from 'expo-clipboard';
 import * as SecureStore from 'expo-secure-store';
@@ -23,7 +23,8 @@ import * as ScreenCapture from 'expo-screen-capture';
 import { supabase } from '../../src/lib/supabase';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { useSubscription } from '../../src/hooks/useSubscription';
-import { cryptoManager } from '../../src/utils/crypto';
+import { cryptoManager, PBKDF2_ITERATIONS_NEW } from '../../src/utils/crypto';
+import { validateMasterPassword } from '../../src/utils/validation';
 
 interface Password {
   id: string;
@@ -159,6 +160,7 @@ export default function PasswordsScreen() {
   const [unlocking, setUnlocking] = useState(false);
   const [encryptionSalt, setEncryptionSalt] = useState<string | null>(null);
   const [verifier, setVerifier] = useState<string | null>(null);
+  const [encryptionIterations, setEncryptionIterations] = useState<number>(100000);
   
   // 마스터 비밀번호 표시 여부
   const [showMasterPassword, setShowMasterPassword] = useState(false);
@@ -229,7 +231,7 @@ export default function PasswordsScreen() {
     // 프로필에서 encryption_salt 및 verifier 가져오기
     const { data: profile, error } = await supabase
       .from('profiles')
-      .select('encryption_salt, verifier')
+      .select('encryption_salt, verifier, encryption_iterations')
       .eq('id', user.id)
       .maybeSingle();
 
@@ -237,16 +239,24 @@ export default function PasswordsScreen() {
       profile: profile ? 'EXISTS' : 'NULL',
       encryption_salt: profile?.encryption_salt || 'NULL',
       verifier: profile?.verifier ? 'EXISTS' : 'NULL',
+      iterations: profile?.encryption_iterations || 'NULL',
       error: error?.message || 'NONE'
     });
 
     if (error) {
       console.error('Profile fetch error:', error);
+      Alert.alert('오류', '사용자 프로필을 불러오는데 실패했습니다. 네트워크 상태를 확인해주세요.');
+      // 에러가 있으면 isFirstTime을 true로 설정하지 않음
+      setLoading(false);
+      return;
     }
 
     if (profile?.encryption_salt) {
       setEncryptionSalt(profile.encryption_salt);
       setVerifier(profile.verifier);
+      if (profile.encryption_iterations) {
+        setEncryptionIterations(profile.encryption_iterations);
+      }
       setIsFirstTime(false);
       console.log('[DEBUG] isFirstTime = false');
     } else {
@@ -262,6 +272,12 @@ export default function PasswordsScreen() {
   const handleUnlock = async () => {
     if (!user) return;
 
+    // UI에 로딩 상태를 먼저 반영하기 위해 비동기 처리
+    setUnlocking(true);
+    
+    // UI 스레드가 렌더링할 시간을 줌 (체감 속도 향상)
+    await new Promise(resolve => setTimeout(resolve, 50));
+
     // 0. Rate Limit Check
     try {
       const rateLimitStr = await SecureStore.getItemAsync('rate_limit_master_pw');
@@ -272,6 +288,7 @@ export default function PasswordsScreen() {
         if (rateLimit.blockedUntil && now < rateLimit.blockedUntil) {
           const remainingMins = Math.ceil((rateLimit.blockedUntil - now) / 60000);
           Alert.alert('접근 차단', `너무 많은 시도로 인해 차단되었습니다. ${remainingMins}분 후에 다시 시도하세요.`);
+          setUnlocking(false);
           return;
         }
         
@@ -284,22 +301,22 @@ export default function PasswordsScreen() {
       console.error('Rate limit check error:', e);
     }
 
-    setUnlocking(true);
-
     if (isFirstTime) {
       if (masterPassword !== confirmMasterPassword) {
         Alert.alert('오류', '마스터 비밀번호가 일치하지 않습니다.');
         setUnlocking(false);
         return;
       }
-      if (masterPassword.length < 8) {
-        Alert.alert('오류', '마스터 비밀번호는 8자 이상이어야 합니다.');
+
+      const validation = validateMasterPassword(masterPassword);
+      if (!validation.isValid) {
+        Alert.alert('오류', validation.message || '비밀번호 형식이 올바르지 않습니다.');
         setUnlocking(false);
         return;
       }
 
       const newSalt = cryptoManager.generateSalt();
-      const success = await cryptoManager.unlock(masterPassword, newSalt);
+      const success = await cryptoManager.unlock(masterPassword, newSalt, PBKDF2_ITERATIONS_NEW);
       if (!success) {
         Alert.alert('오류', '암호화 키 생성에 실패했습니다.');
         setUnlocking(false);
@@ -316,11 +333,12 @@ export default function PasswordsScreen() {
       try {
         const { error: profileError } = await supabase
           .from('profiles')
-          .upsert({ 
+          .upsert({
             id: user.id,
             email: user.email || 'unknown@email.com',
             encryption_salt: newSalt,
             verifier: JSON.stringify(verifierData),
+            encryption_iterations: PBKDF2_ITERATIONS_NEW,
             updated_at: new Date().toISOString()
           });
 
@@ -332,10 +350,11 @@ export default function PasswordsScreen() {
         
         const { error: retryError } = await supabase
           .from('profiles')
-          .upsert({ 
+          .upsert({
             id: user.id,
             email: user.email || 'unknown@email.com',
             encryption_salt: newSalt,
+            encryption_iterations: PBKDF2_ITERATIONS_NEW,
             updated_at: new Date().toISOString()
           });
 
@@ -348,6 +367,7 @@ export default function PasswordsScreen() {
       }
 
       setEncryptionSalt(newSalt);
+      setEncryptionIterations(PBKDF2_ITERATIONS_NEW);
       setIsLocked(false);
       setShowUnlockModal(false);
       setMasterPassword('');
@@ -388,13 +408,14 @@ export default function PasswordsScreen() {
       };
 
       // 1. Standard 방식 시도
-      await cryptoManager.unlock(masterPassword, encryptionSalt);
+      await cryptoManager.unlock(masterPassword, encryptionSalt, encryptionIterations);
       let isVerified = await verifyKey();
       let migrationNeeded = false;
 
       // 2. Legacy 방식 시도 (Standard 실패 시)
       if (!isVerified) {
         console.log('Standard unlock failed, trying legacy...');
+        // Legacy는 무조건 100,000회 사용
         await cryptoManager.unlockLegacy(masterPassword, encryptionSalt);
         isVerified = await verifyKey();
         if (isVerified) {
@@ -420,8 +441,9 @@ export default function PasswordsScreen() {
               }
             }
 
-            // Standard Key로 전환
-            await cryptoManager.unlock(masterPassword, encryptionSalt);
+            // Standard Key로 전환 (반복 횟수도 업데이트 가능성이 있다면 여기서 조정 가능하지만 일단 기존 횟수 유지 또는 310,000으로 강제 마이그레이션도 고려 가능)
+            // 여기서는 일단 기존 iterations(100,000)으로 잠금 해제 유지 (마이그레이션 로직이 복잡하므로)
+            await cryptoManager.unlock(masterPassword, encryptionSalt, encryptionIterations);
 
             for (const item of decryptedList) {
               const enc = await cryptoManager.encrypt(item.plain);
@@ -555,7 +577,7 @@ export default function PasswordsScreen() {
       if (!limit.allowed) {
         Alert.alert(
           '한도 도달',
-          `비밀번호 저장 한도(${limit.limit}개)에 도달했습니다.\n\nPro로 업그레이드하면 무제한으로 저장할 수 있습니다.`,
+          `비밀번호 저장 한도(${limit.limit}개)에 도달했습니다.\n\n웹사이트에서 플랜을 관리할 수 있습니다.`,
           [
             { text: '확인', style: 'cancel' },
           ]
@@ -753,7 +775,10 @@ export default function PasswordsScreen() {
         animationType="slide"
         transparent={true}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <View style={styles.modalHeaderTop}>
@@ -826,7 +851,11 @@ export default function PasswordsScreen() {
               onPress={handleUnlock}
               disabled={unlocking}
             >
-              <Ionicons name="lock-open" size={20} color="#fff" />
+              {unlocking ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Ionicons name="lock-open" size={20} color="#fff" />
+              )}
               <Text style={styles.primaryButtonText}>
                 {unlocking ? '잠금 해제 중...' : '잠금 해제'}
               </Text>
@@ -839,7 +868,7 @@ export default function PasswordsScreen() {
               </Text>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* 추가/수정 모달 */}
@@ -973,39 +1002,42 @@ export default function PasswordsScreen() {
                <Ionicons name="add" size={24} color="#fff" />
              </TouchableOpacity>
           </View>
-
-          <FlatList
-            data={passwords}
-            renderItem={({ item }) => (
-              <PasswordItem 
-                item={item} 
-                isVisible={visiblePasswords.has(item.id)}
-                decryptedPassword={decryptedPasswords[item.id]}
-                onToggleVisibility={authenticateAndShow}
-                onCopy={copyPassword}
-                onEdit={openEditModal}
-                onDelete={handleDelete}
-              />
-            )}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.list}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={() => {
-                  setRefreshing(true);
-                  fetchPasswords();
-                }}
-              />
-            }
-            ListEmptyComponent={
-              <View style={styles.empty}>
-                <Ionicons name="lock-closed" size={48} color="#D1D5DB" />
-                <Text style={styles.emptyText}>저장된 비밀번호가 없습니다</Text>
-                <Text style={styles.emptySubtext}>PC에서 비밀번호를 추가해주세요</Text>
-              </View>
-            }
-          />
+          
+          <View style={{ flex: 1 }}>
+            <FlashList
+              data={passwords}
+              renderItem={({ item }) => (
+                <PasswordItem 
+                  item={item} 
+                  isVisible={visiblePasswords.has(item.id)}
+                  decryptedPassword={decryptedPasswords[item.id]}
+                  onToggleVisibility={authenticateAndShow}
+                  onCopy={copyPassword}
+                  onEdit={openEditModal}
+                  onDelete={handleDelete}
+                />
+              )}
+              keyExtractor={(item) => item.id}
+              estimatedItemSize={160}
+              contentContainerStyle={styles.list}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={() => {
+                    setRefreshing(true);
+                    fetchPasswords();
+                  }}
+                />
+              }
+              ListEmptyComponent={
+                <View style={styles.empty}>
+                  <Ionicons name="lock-closed" size={48} color="#D1D5DB" />
+                  <Text style={styles.emptyText}>저장된 비밀번호가 없습니다</Text>
+                  <Text style={styles.emptySubtext}>PC에서 비밀번호를 추가해주세요</Text>
+                </View>
+              }
+            />
+          </View>
         </>
       )}
     </View>

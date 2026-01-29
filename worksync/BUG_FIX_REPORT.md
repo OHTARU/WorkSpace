@@ -38,6 +38,11 @@
 | 12 | `shared/utils/crypto.ts` | PBKDF2 반복 횟수 부족 | MEDIUM | ✅ 수정 완료 |
 | 13 | `web/src/app/(dashboard)/dashboard/todos/page.tsx` | 일관성 없는 로깅 | LOW | ✅ 수정 완료 |
 | 14 | `web/src/app/(dashboard)/dashboard/clipboard/page.tsx` | 타입 안정성 (as any) | LOW | ✅ 수정 완료 |
+| 15 | `mobile/app/(tabs)/clipboard.tsx` | Android 이미지 저장 오류 (MediaLibrary) | HIGH | ✅ 수정 완료 |
+| 16 | `web/middleware.ts` | CSRF Origin 검증 취약점 (Includes) | HIGH | ✅ 수정 완료 |
+| 17 | `web/src/app/.../passwords/page.tsx` | 마스터 비밀번호 강도 검증 부족 | MEDIUM | ✅ 수정 완료 |
+| 18 | `supabase/migrations/007_storage_security.sql` | 파일 업로드 서버사이드 검증 없음 | MEDIUM | ✅ 수정 완료 |
+| 19 | `supabase/functions/delete-account/index.ts` | 계정 삭제 시 Stripe 구독 유지 문제 | HIGH | ✅ 수정 완료 |
 
 ---
 
@@ -273,6 +278,110 @@ const path = clip.original_path || clip.media_url;  // (clip as any) 제거
 
 ---
 
+### 2.12 Android 이미지 저장 오류 수정 (NEW)
+
+**파일:** `mobile/app/(tabs)/clipboard.tsx:321-344`
+
+**문제:**
+- Android에서 `FileSystem.cacheDirectory`에 저장된 파일을 `MediaLibrary.createAssetAsync`로 접근 시 권한/경로 문제 발생
+- 다운로드 실패 시에도 저장 시도
+
+**수정 내용:**
+```typescript
+// cacheDirectory -> documentDirectory로 변경
+const fileUri = `${FileSystem.documentDirectory}${fileName}`;
+
+// 다운로드 상태 체크 추가
+if (downloadResult.status !== 200) {
+  throw new Error(...);
+}
+
+// 파일 존재 확인 추가
+const fileInfo = await FileSystem.getInfoAsync(fileUri);
+if (!fileInfo.exists) { ... }
+```
+
+**효과:** Android 기기에서 이미지/동영상 갤러리 저장 정상화
+
+---
+
+### 2.13 CSRF Origin 검증 강화 (NEW)
+
+**파일:** `web/middleware.ts`
+
+**문제:**
+- `!origin.includes(host)` 사용으로 서브도메인 공격 취약 (`attacker.example.com` 허용)
+
+**수정 내용:**
+```typescript
+// Strict URL host comparison
+if (!isLocalDev && originUrl.host !== host) {
+  // Block
+}
+```
+
+**효과:** 정확한 호스트 매칭을 통한 CSRF 방어
+
+---
+
+### 2.14 마스터 비밀번호 강도 검증 강화 (NEW)
+
+**파일:** `web/src/app/(dashboard)/dashboard/passwords/page.tsx`
+
+**문제:**
+- 단순 길이 제한(8자)만 있어 약한 비밀번호("12345678") 설정 가능
+
+**수정 내용:**
+```typescript
+// 정규식 기반 복합성 검증 추가
+const hasUpperCase = /[A-Z]/.test(pw);
+const hasLowerCase = /[a-z]/.test(pw);
+const hasNumber = /[0-9]/.test(pw);
+const hasSpecial = /[!@#$%^&*...]/.test(pw);
+
+if (length < 8 || !hasUpper || !hasLower || !hasNum || !hasSpecial) {
+  // Reject
+}
+```
+
+**효과:** 브루트포스 공격에 취약한 비밀번호 설정 방지
+
+---
+
+### 2.15 Storage 보안 강화 (NEW)
+
+**파일:** `supabase/migrations/007_storage_security.sql`
+
+**문제:**
+- Storage 버킷에 파일 타입/크기 제한이 없어 악성 파일(exe, html 등) 업로드 가능성 존재
+
+**수정 내용:**
+```sql
+UPDATE storage.buckets
+SET allowed_mime_types = ARRAY['image/jpeg', 'image/png', ...],
+    file_size_limit = 10485760 -- 10MB
+WHERE id = 'clipboard-media';
+```
+
+**효과:** 서버 차원에서 업로드 파일 검증 강제
+
+---
+
+### 2.16 계정 삭제 시 Stripe 구독 자동 취소 (NEW)
+
+**파일:** `supabase/functions/delete-account/index.ts`
+
+**문제:**
+- 계정 삭제 시 DB와 Auth 데이터는 지워지지만, Stripe 유료 구독은 유지되어 계속 결제될 위험 존재
+
+**수정 내용:**
+- `stripe` SDK를 Edge Function에 연동
+- 계정 삭제 프로세스 시작 전 `stripe_subscription_id`를 조회하여 Stripe API로 즉시 취소 처리
+
+**효과:** 계정 삭제 시 금전적 피해 방지 및 완전한 탈퇴 처리
+
+---
+
 ## 3. 테스트 권장 사항
 
 ### 3.1 AuthContext 테스트
@@ -372,6 +481,10 @@ const path = clip.original_path || clip.media_url;  // (clip as any) 제거
 | 12 | 타입 안정성 | ✅ 완료 |
 | 13 | CSRF 보호 추가 | ✅ 완료 |
 | 14 | 서버 사이드 Rate Limiting | ✅ 완료 |
+| 15 | CSRF Origin 검증 강화 | ✅ 완료 |
+| 16 | 마스터 비밀번호 강도 검증 강화 | ✅ 완료 |
+| 17 | 파일 업로드 서버사이드 검증 강화 | ✅ 완료 |
+| 18 | 계정 삭제 시 Stripe 구독 취소 추가 | ✅ 완료 |
 
 ### 남은 작업
 
@@ -380,8 +493,7 @@ const path = clip.original_path || clip.media_url;  // (clip as any) 제거
 | 1 | 앱 크래시 - expo-updates 누락 | CRITICAL | ✅ 완료 |
 | 2 | Client-Side Rate Limiting 우회 가능 | HIGH | 🔴 미완료 |
 | 3 | Middleware Rate Limiting 비효과적 | HIGH | 🔴 미완료 |
-| 4 | CSRF localhost 예외 취약점 | HIGH | 🔴 미완료 |
-| 5 | 마스터 비밀번호 강도 검증 부족 | MEDIUM | 🔴 미완료 |
+| 4 | CSP unsafe-inline/unsafe-eval 사용 | LOW | 🔴 미완료 |
 | 6 | 파일 업로드 서버사이드 검증 없음 | MEDIUM | 🔴 미완료 |
 | 7 | CSP unsafe-inline/unsafe-eval 사용 | LOW | 🔴 미완료 |
 | 8 | 에러 모니터링 미구현 | LOW | 🔴 미완료 |
@@ -507,33 +619,13 @@ const rateLimit = new Map<string, { count: number; lastReset: number }>();
 
 ---
 
-### 7.4 High - CSRF localhost 예외 취약점
+// 7.4 삭제됨 (수정 완료)
 
-**파일:** `web/middleware.ts:33-45`
-
-**문제:**
-```typescript
-if (!origin.includes('localhost') && !origin.includes('127.0.0.1')) {
-  return new NextResponse(JSON.stringify({ message: 'Invalid Origin' }), { status: 403 });
-}
-```
-
-**위험:**
-- `includes()` 사용으로 `attacker.localhost.com` 우회 가능
-- 프로덕션에 개발용 예외 코드 존재
-
-**권장 조치:**
-```typescript
-// URL 객체로 정확한 호스트 비교
-const originUrl = new URL(origin);
-const hostUrl = new URL(`https://${host}`);
-if (originUrl.hostname !== hostUrl.hostname) { ... }
-// 프로덕션에서는 localhost 예외 제거
-```
+// 7.6 삭제됨 (수정 완료)
 
 ---
 
-### 7.5 Medium - 마스터 비밀번호 강도 검증 부족
+### 7.7 Low - CSP unsafe-inline/unsafe-eval
 
 **파일:** `web/src/app/(dashboard)/dashboard/passwords/page.tsx:141-145`
 
@@ -588,7 +680,12 @@ if (masterPassword.length < 8) {
 | # | 파일 경로 | 수정 내용 |
 |---|----------|----------|
 | 11 | `mobile/src/components/GlobalErrorBoundary.tsx` | expo-updates 의존성 제거, 앱 크래시 해결 |
+| 12 | `mobile/app/(tabs)/clipboard.tsx` | Android MediaLibrary 저장 경로 수정 |
+| 13 | `web/middleware.ts` | CSRF Origin 검증 강화 |
+| 14 | `web/src/app/.../passwords/page.tsx` | 마스터 비밀번호 강도 검증 강화 |
+| 15 | `supabase/migrations/007_storage_security.sql` | Storage 버킷 보안 설정 |
+| 16 | `supabase/functions/delete-account/index.ts` | Stripe 구독 취소 로직 추가 |
 
 ---
 
-*이 리포트는 2026-01-26에 생성되고 2026-01-27에 업데이트되었습니다.*
+*이 리포트는 2026-01-26에 생성되고 2026-01-29에 업데이트되었습니다.*

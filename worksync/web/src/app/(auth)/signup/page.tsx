@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
+import { validateMasterPassword } from '@shared/utils/validation';
 
 export default function SignupPage() {
   const [email, setEmail] = useState('');
@@ -22,8 +23,9 @@ export default function SignupPage() {
       return;
     }
 
-    if (password.length < 6) {
-      toast.error('비밀번호는 최소 6자 이상이어야 합니다.');
+    const validation = validateMasterPassword(password);
+    if (!validation.isValid) {
+      toast.error(validation.message || '비밀번호 형식이 올바르지 않습니다.');
       return;
     }
 

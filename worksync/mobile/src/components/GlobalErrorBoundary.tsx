@@ -1,5 +1,5 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 interface Props {
@@ -32,6 +32,38 @@ export class GlobalErrorBoundary extends Component<Props, State> {
     this.setState({ hasError: false, error: null, errorInfo: null });
   };
 
+  handleReport = () => {
+    const { error, errorInfo } = this.state;
+    const deviceHash = Platform.OS + '-' + Platform.Version;
+    const timestamp = new Date().toISOString();
+    
+    const errorDetails = `
+--- BUG REPORT ---
+Timestamp: ${timestamp}
+Device/OS: ${deviceHash}
+App Version: 1.0.1 (Build 2)
+
+Error Message:
+${error?.toString()}
+
+Component Stack:
+${errorInfo?.componentStack}
+
+--- END REPORT ---
+`.trim();
+
+    const subject = `[WorkSync Bug Report] ${error?.name || 'Error'}`;
+    const url = `mailto:dusckd4948@naver.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(errorDetails)}`;
+    
+    Linking.canOpenURL(url).then(supported => {
+      if (supported) {
+        Linking.openURL(url);
+      } else {
+        Alert.alert('알림', '이메일 앱을 찾을 수 없습니다. dusckd4948@naver.com 으로 오류 내용을 보내주세요.');
+      }
+    });
+  };
+
   render() {
     if (this.state.hasError) {
       return (
@@ -49,9 +81,15 @@ export class GlobalErrorBoundary extends Component<Props, State> {
               </Text>
             </View>
 
-            <TouchableOpacity style={styles.button} onPress={this.handleRestart}>
-              <Text style={styles.buttonText}>앱 다시 시작</Text>
-            </TouchableOpacity>
+            <View style={styles.buttonContainer}>
+              <TouchableOpacity style={styles.button} onPress={this.handleRestart}>
+                <Text style={styles.buttonText}>앱 다시 시작</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity style={[styles.button, styles.secondaryButton]} onPress={this.handleReport}>
+                <Text style={styles.secondaryButtonText}>오류 보고하기</Text>
+              </TouchableOpacity>
+            </View>
           </ScrollView>
         </SafeAreaView>
       );
@@ -99,14 +137,27 @@ const styles = StyleSheet.create({
     color: '#374151',
     fontFamily: 'monospace',
   },
+  buttonContainer: {
+    width: '100%',
+    gap: 12,
+  },
   button: {
     backgroundColor: '#3B82F6',
     paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
   },
   buttonText: {
     color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  secondaryButton: {
+    backgroundColor: '#F3F4F6',
+  },
+  secondaryButtonText: {
+    color: '#4B5563',
     fontSize: 16,
     fontWeight: '600',
   },

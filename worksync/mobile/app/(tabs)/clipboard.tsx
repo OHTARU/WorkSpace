@@ -2,25 +2,26 @@ import { useState, useEffect } from 'react';
 import {
   View,
   Text,
-  FlatList,
   TouchableOpacity,
   StyleSheet,
   RefreshControl,
   Alert,
-  Image,
   ActivityIndicator,
   Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { FlashList } from '@shopify/flash-list';
+import { Image } from 'expo-image';
 import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
-import { Video, ResizeMode } from 'expo-av';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import { supabase } from '../../src/lib/supabase';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { useSubscription } from '../../src/hooks/useSubscription';
+import { useInterstitialAd } from '../../src/hooks/useInterstitialAd';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const { width: screenWidth } = Dimensions.get('window');
@@ -37,6 +38,21 @@ interface ClipboardItem {
   file_size: number | null;
 }
 
+function VideoPlayer({ uri, style }: { uri: string; style: any }) {
+  const player = useVideoPlayer(uri, player => {
+    player.loop = false;
+  });
+
+  return (
+    <VideoView
+      style={style}
+      player={player}
+      contentFit="contain"
+      nativeControls
+    />
+  );
+}
+
 export default function ClipboardScreen() {
   const [clipboards, setClipboards] = useState<ClipboardItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,6 +61,7 @@ export default function ClipboardScreen() {
   const [saving, setSaving] = useState<string | null>(null);
   const { user } = useAuth();
   const { checkLimit } = useSubscription();
+  const { showAd, isLoaded } = useInterstitialAd();
 
   useEffect(() => {
     fetchClipboards();
@@ -172,7 +189,7 @@ export default function ClipboardScreen() {
     if (!limit.allowed) {
       Alert.alert(
         '한도 도달',
-        `클립보드 저장 한도(${limit.limit}개)에 도달했습니다.\n\nPro로 업그레이드하면 무제한으로 저장할 수 있습니다.`,
+        `클립보드 저장 한도(${limit.limit}개)에 도달했습니다.\n\n웹사이트에서 플랜을 관리할 수 있습니다.`,
         [{ text: '확인', style: 'cancel' }]
       );
       return;
@@ -280,6 +297,11 @@ export default function ClipboardScreen() {
   const saveMedia = async (item: ClipboardItem) => {
     if (!item.media_url) return;
 
+    // 광고 표시 (로드된 경우)
+    if (isLoaded) {
+      showAd();
+    }
+
     setSaving(item.id);
     try {
       // 갤러리 접근 권한 확인
@@ -290,11 +312,26 @@ export default function ClipboardScreen() {
         return;
       }
 
-      // 파일 확장자 추출
-      const urlParts = item.media_url.split('.');
-      const ext = urlParts[urlParts.length - 1].split('?')[0] || 'jpg';
+      // 파일 확장자 결정 (MIME 타입 우선, 없으면 URL에서 추출)
+      let ext = 'jpg';
+      if (item.media_type) {
+        if (item.media_type.includes('video')) {
+          ext = item.media_type.includes('quicktime') ? 'mov' : 'mp4';
+        } else if (item.media_type.includes('image')) {
+          if (item.media_type.includes('png')) ext = 'png';
+          else if (item.media_type.includes('gif')) ext = 'gif';
+          else if (item.media_type.includes('webp')) ext = 'webp';
+          else ext = 'jpg';
+        }
+      } else {
+        const urlParts = item.media_url.split('.');
+        const urlExt = urlParts[urlParts.length - 1].split('?')[0];
+        if (urlExt && urlExt.length < 5) ext = urlExt; // 길이가 너무 길면 확장자가 아닐 수 있음
+      }
+
       const fileName = `worksync_${Date.now()}.${ext}`;
-      const fileUri = FileSystem.cacheDirectory + fileName;
+      // Android에서는 cacheDirectory에서 바로 MediaLibrary로 이동 시 문제가 발생할 수 있어 documentDirectory 사용
+      const fileUri = `${FileSystem.documentDirectory}${fileName}`;
 
       // 파일 다운로드
       const downloadResult = await FileSystem.downloadAsync(
@@ -303,7 +340,13 @@ export default function ClipboardScreen() {
       );
 
       if (downloadResult.status !== 200) {
-        throw new Error('다운로드에 실패했습니다.');
+        throw new Error(`다운로드에 실패했습니다. (Status: ${downloadResult.status})`);
+      }
+
+      // 파일 존재 확인
+      const fileInfo = await FileSystem.getInfoAsync(fileUri);
+      if (!fileInfo.exists) {
+        throw new Error('파일을 저장할 수 없습니다.');
       }
 
       // 갤러리에 저장
@@ -393,17 +436,15 @@ export default function ClipboardScreen() {
           <View style={styles.mediaContainer}>
             {item.content_type === 'image' ? (
               <Image
-                source={{ uri: item.media_url }}
+                source={item.media_url}
                 style={styles.mediaImage}
-                resizeMode="cover"
+                contentFit="cover"
+                transition={200}
               />
             ) : (
-              <Video
-                source={{ uri: item.media_url }}
+              <VideoPlayer
+                uri={item.media_url}
                 style={styles.mediaVideo}
-                useNativeControls
-                resizeMode={ResizeMode.CONTAIN}
-                isLooping={false}
               />
             )}
           </View>
@@ -470,10 +511,11 @@ export default function ClipboardScreen() {
         </View>
       )}
 
-      <FlatList
+      <FlashList
         data={clipboards}
         renderItem={renderItem}
         keyExtractor={(item) => item.id}
+        estimatedItemSize={250}
         contentContainerStyle={styles.list}
         refreshControl={
           <RefreshControl

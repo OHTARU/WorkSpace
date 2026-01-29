@@ -42,7 +42,7 @@ export interface EncryptedData {
 /** 암호화 매니저 인터페이스 */
 export interface ICryptoManager {
   /** 마스터 비밀번호로 잠금 해제 */
-  unlock(masterPassword: string, saltBase64: string): Promise<boolean>;
+  unlock(masterPassword: string, saltBase64: string, iterations?: number): Promise<boolean>;
 
   /** 잠금 */
   lock(): void;
@@ -135,7 +135,8 @@ function toBufferSource(arr: Uint8Array): BufferSource {
  */
 export async function deriveKeyWebCrypto(
   password: string,
-  salt: Uint8Array
+  salt: Uint8Array,
+  iterations: number = PBKDF2_ITERATIONS
 ): Promise<CryptoKey> {
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
@@ -149,7 +150,7 @@ export async function deriveKeyWebCrypto(
     {
       name: 'PBKDF2',
       salt: toBufferSource(salt),
-      iterations: PBKDF2_ITERATIONS,
+      iterations: iterations,
       hash: 'SHA-256',
     },
     keyMaterial,

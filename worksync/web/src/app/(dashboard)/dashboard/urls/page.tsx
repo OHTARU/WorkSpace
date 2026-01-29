@@ -28,18 +28,8 @@ export default function UrlsPage() {
 
   const supabase = createClient();
   const pagination = usePagination({ initialPageSize: 20 });
+  const { page, pageSize, offset, setTotalCount } = pagination;
   const { checkLimit, isFree } = useSubscription();
-
-  // 사용자 확인
-  useEffect(() => {
-    const checkUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setUserId(user.id);
-      }
-    };
-    checkUser();
-  }, []);
 
   // URL 목록 조회 (페이지네이션 적용)
   const fetchUrls = useCallback(async () => {
@@ -59,7 +49,7 @@ export default function UrlsPage() {
       return;
     }
 
-    pagination.setTotalCount(count || 0);
+    setTotalCount(count || 0);
 
     // 페이지네이션으로 데이터 조회
     const { data, error } = await supabase
@@ -67,7 +57,7 @@ export default function UrlsPage() {
       .select('*')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
-      .range(pagination.offset, pagination.offset + pagination.pageSize - 1);
+      .range(offset, offset + pageSize - 1);
 
     if (error) {
       toast.error('URL 목록을 불러오는데 실패했습니다.');
@@ -75,14 +65,25 @@ export default function UrlsPage() {
       setUrls(data || []);
     }
     setLoading(false);
-  }, [userId, pagination.offset, pagination.pageSize]);
+  }, [userId, offset, pageSize, setTotalCount, supabase]);
+
+  // 사용자 확인
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setUserId(user.id);
+      }
+    };
+    checkUser();
+  }, [supabase]);
 
   // userId나 페이지가 변경되면 데이터 조회
   useEffect(() => {
     if (userId) {
       fetchUrls();
     }
-  }, [userId, pagination.page, pagination.pageSize]);
+  }, [userId, page, pageSize, fetchUrls]);
 
   // Realtime 구독 (에러 핸들링 포함)
   useEffect(() => {
@@ -100,19 +101,19 @@ export default function UrlsPage() {
           filter: `user_id=eq.${userId}`,
         }, (payload) => {
           // INSERT: 첫 페이지에 있으면 목록에 추가
-          if (payload.eventType === 'INSERT' && pagination.page === 1) {
+          if (payload.eventType === 'INSERT' && page === 1) {
             const newItem = payload.new as Url;
             setUrls((prev) => {
               // 이미 있으면 무시 (낙관적 업데이트로 이미 추가됨)
               if (prev.some((u) => u.id === newItem.id)) return prev;
               // 페이지 크기 초과하면 마지막 항목 제거
               const updated = [newItem, ...prev];
-              if (updated.length > pagination.pageSize) {
+              if (updated.length > pageSize) {
                 updated.pop();
               }
               return updated;
             });
-            pagination.setTotalCount((prev) => prev + 1);
+            setTotalCount((prev) => prev + 1);
           }
 
           // UPDATE: 현재 목록에 있으면 업데이트
@@ -127,7 +128,7 @@ export default function UrlsPage() {
           if (payload.eventType === 'DELETE') {
             const deletedId = payload.old.id;
             setUrls((prev) => prev.filter((u) => u.id !== deletedId));
-            pagination.setTotalCount((prev) => Math.max(0, prev - 1));
+            setTotalCount((prev) => Math.max(0, prev - 1));
           }
         })
         .subscribe((status, err) => {
@@ -152,7 +153,7 @@ export default function UrlsPage() {
         supabase.removeChannel(channel);
       }
     };
-  }, [userId, pagination.page, pagination.pageSize]);
+  }, [userId, page, pageSize, setTotalCount, supabase]);
 
   const addUrl = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -177,7 +178,7 @@ export default function UrlsPage() {
 
     // 낙관적 업데이트 (첫 페이지일 때만)
     const tempId = crypto.randomUUID();
-    if (pagination.page === 1) {
+    if (page === 1) {
       const newUrlItem: Url = {
         id: tempId,
         user_id: userId,
@@ -191,7 +192,7 @@ export default function UrlsPage() {
       };
       setUrls((prev) => {
         const updated = [newUrlItem, ...prev];
-        if (updated.length > pagination.pageSize) {
+        if (updated.length > pageSize) {
           updated.pop();
         }
         return updated;
@@ -208,14 +209,14 @@ export default function UrlsPage() {
 
     if (error) {
       toast.error('URL 추가에 실패했습니다.');
-      if (pagination.page === 1) {
+      if (page === 1) {
         setUrls((prev) => prev.filter((u) => u.id !== tempId));
       }
     } else {
-      if (pagination.page === 1) {
+      if (page === 1) {
         setUrls((prev) => prev.map((u) => (u.id === tempId ? data : u)));
       }
-      pagination.setTotalCount((prev) => prev + 1);
+      setTotalCount((prev) => prev + 1);
       toast.success('URL이 추가되었습니다!');
     }
   };
@@ -290,7 +291,7 @@ export default function UrlsPage() {
 
       {/* URL 추가 폼 */}
       <form onSubmit={addUrl} className="card mb-6">
-        <div className="flex gap-4">
+        <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
           <div className="flex-1">
             <input
               type="text"
@@ -301,7 +302,7 @@ export default function UrlsPage() {
               required
             />
           </div>
-          <div className="w-48">
+          <div className="w-full sm:w-48">
             <input
               type="text"
               value={newTitle}
@@ -310,7 +311,7 @@ export default function UrlsPage() {
               placeholder="제목 (선택)"
             />
           </div>
-          <button type="submit" className="btn btn-primary flex items-center gap-2">
+          <button type="submit" className="btn btn-primary flex items-center justify-center gap-2 w-full sm:w-auto">
             <Plus size={20} />
             추가
           </button>
@@ -327,49 +328,51 @@ export default function UrlsPage() {
           urls.map((url) => (
             <div
               key={url.id}
-              className={`card flex items-center gap-4 ${url.is_read ? 'opacity-60' : ''}`}
+              className={`card ${url.is_read ? 'opacity-60' : ''}`}
             >
-              <button
-                onClick={() => toggleRead(url.id, url.is_read)}
-                className={`p-2 rounded-lg border ${
-                  url.is_read
-                    ? 'bg-green-100 border-green-300 text-green-600'
-                    : 'border-gray-300 text-gray-400 hover:bg-gray-100'
-                }`}
-                aria-label={url.is_read ? '읽지 않음으로 표시' : '읽음으로 표시'}
-              >
-                <Check size={20} />
-              </button>
-
-              <div className="flex-1 min-w-0">
-                <h3 className={`font-medium ${url.is_read ? 'line-through text-gray-400' : 'text-gray-900'}`}>
-                  {url.title || url.url}
-                </h3>
-                {url.title && (
-                  <p className="text-sm text-gray-500 truncate">{url.url}</p>
-                )}
-                <p className="text-xs text-gray-400 mt-1">
-                  {new Date(url.created_at).toLocaleString('ko-KR')}
-                </p>
-              </div>
-
-              <div className="flex gap-2">
-                <a
-                  href={url.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-2 text-gray-500 hover:text-primary-600 hover:bg-gray-100 rounded-lg"
-                  aria-label="새 탭에서 열기"
-                >
-                  <ExternalLink size={20} />
-                </a>
+              <div className="flex items-start gap-3 sm:gap-4">
                 <button
-                  onClick={() => confirmDelete(url.id, url.title || url.url)}
-                  className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg"
-                  aria-label="삭제"
+                  onClick={() => toggleRead(url.id, url.is_read)}
+                  className={`p-2 rounded-lg border flex-shrink-0 ${
+                    url.is_read
+                      ? 'bg-green-100 border-green-300 text-green-600'
+                      : 'border-gray-300 text-gray-400 hover:bg-gray-100'
+                  }`}
+                  aria-label={url.is_read ? '읽지 않음으로 표시' : '읽음으로 표시'}
                 >
-                  <Trash2 size={20} />
+                  <Check size={20} />
                 </button>
+
+                <div className="flex-1 min-w-0">
+                  <h3 className={`font-medium break-words ${url.is_read ? 'line-through text-gray-400' : 'text-gray-900'}`}>
+                    {url.title || url.url}
+                  </h3>
+                  {url.title && (
+                    <p className="text-sm text-gray-500 truncate">{url.url}</p>
+                  )}
+                  <p className="text-xs text-gray-400 mt-1">
+                    {new Date(url.created_at).toLocaleString('ko-KR')}
+                  </p>
+                </div>
+
+                <div className="flex gap-1 sm:gap-2 flex-shrink-0">
+                  <a
+                    href={url.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-2 text-gray-500 hover:text-primary-600 hover:bg-gray-100 rounded-lg"
+                    aria-label="새 탭에서 열기"
+                  >
+                    <ExternalLink size={20} />
+                  </a>
+                  <button
+                    onClick={() => confirmDelete(url.id, url.title || url.url)}
+                    className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                    aria-label="삭제"
+                  >
+                    <Trash2 size={20} />
+                  </button>
+                </div>
               </div>
             </div>
           ))

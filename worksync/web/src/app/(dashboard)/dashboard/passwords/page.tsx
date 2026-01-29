@@ -17,8 +17,10 @@ import {
   deriveKeyWebCrypto,
   encryptWebCrypto,
   decryptWebCrypto,
-  base64ToBuffer
+  base64ToBuffer,
+  PBKDF2_ITERATIONS_NEW
 } from '@shared/utils/crypto';
+import { validateMasterPassword } from '@shared/utils/validation';
 
 interface DecryptedPassword extends Password {
   decryptedPassword?: string;
@@ -39,6 +41,7 @@ export default function PasswordsPage() {
   const [unlocking, setUnlocking] = useState(false);
   const [encryptionSalt, setEncryptionSalt] = useState<string | null>(null);
   const [verifier, setVerifier] = useState<string | null>(null);
+  const [encryptionIterations, setEncryptionIterations] = useState<number>(100000);
 
   // 폼 상태
   const [serviceName, setServiceName] = useState('');
@@ -96,13 +99,16 @@ export default function PasswordsPage() {
       // 프로필에서 encryption_salt 및 verifier 가져오기
       const { data: profile } = await supabase
         .from('profiles')
-        .select('encryption_salt, verifier')
+        .select('encryption_salt, verifier, encryption_iterations')
         .eq('id', user.id)
         .maybeSingle();
 
       if (profile?.encryption_salt) {
         setEncryptionSalt(profile.encryption_salt);
         setVerifier(profile.verifier);
+        if (profile.encryption_iterations) {
+          setEncryptionIterations(profile.encryption_iterations);
+        }
       }
 
       // 저장된 비밀번호가 있는지 확인
@@ -138,8 +144,11 @@ export default function PasswordsPage() {
           setUnlocking(false);
           return;
         }
-        if (masterPassword.length < 8) {
-          toast.error('마스터 비밀번호는 8자 이상이어야 합니다.');
+
+        // 비밀번호 강도 검사
+        const validation = validateMasterPassword(masterPassword);
+        if (!validation.isValid) {
+          toast.error(validation.message || '비밀번호 형식이 올바르지 않습니다.');
           setUnlocking(false);
           return;
         }
@@ -148,21 +157,21 @@ export default function PasswordsPage() {
         const newSalt = generateSalt();
         const saltBuffer = base64ToBuffer(newSalt);
         
-        // 키 파생 및 Verifier 생성
-        const key = await deriveKeyWebCrypto(masterPassword, saltBuffer);
+        // 키 파생 및 Verifier 생성 (신규 사용자는 높은 반복 횟수 적용)
+        const key = await deriveKeyWebCrypto(masterPassword, saltBuffer, PBKDF2_ITERATIONS_NEW);
         const verifierData = await encryptWebCrypto('WORKSYNC_VERIFIER', key);
         
-        // 프로필 저장 (Upsert)
+        // 프로필 저장 (Update)
         try {
           const { error: profileError } = await supabase
             .from('profiles')
-            .upsert({ 
-              id: userId,
-              email: userEmail || 'unknown@email.com',
+            .update({ 
               encryption_salt: newSalt,
               verifier: JSON.stringify(verifierData),
+              encryption_iterations: PBKDF2_ITERATIONS_NEW,
               updated_at: new Date().toISOString()
-            });
+            })
+            .eq('id', userId);
 
           if (profileError) throw profileError;
         } catch (error) {
@@ -170,12 +179,12 @@ export default function PasswordsPage() {
           // 컬럼 없음 에러 대비 재시도
           const { error: retryError } = await supabase
             .from('profiles')
-            .upsert({ 
-              id: userId,
-              email: userEmail || 'unknown@email.com',
+            .update({ 
               encryption_salt: newSalt,
+              encryption_iterations: PBKDF2_ITERATIONS_NEW,
               updated_at: new Date().toISOString()
-            });
+            })
+            .eq('id', userId);
 
           if (retryError) {
             toast.error('설정 저장에 실패했습니다.');
@@ -185,7 +194,8 @@ export default function PasswordsPage() {
         }
 
         setEncryptionSalt(newSalt);
-        await unlock(masterPassword, newSalt); // 앱 상태 잠금 해제
+        setEncryptionIterations(PBKDF2_ITERATIONS_NEW);
+        await unlock(masterPassword, newSalt, PBKDF2_ITERATIONS_NEW); // 앱 상태 잠금 해제
         
         toast.success('마스터 비밀번호가 설정되었습니다.');
         rateLimit.reset();
@@ -202,7 +212,7 @@ export default function PasswordsPage() {
         }
 
         const saltBuffer = base64ToBuffer(encryptionSalt);
-        const key = await deriveKeyWebCrypto(masterPassword, saltBuffer);
+        const key = await deriveKeyWebCrypto(masterPassword, saltBuffer, encryptionIterations);
         
         // 검증 로직
         let verified = false;
@@ -245,7 +255,7 @@ export default function PasswordsPage() {
         }
 
         if (verified) {
-          await unlock(masterPassword, encryptionSalt);
+          await unlock(masterPassword, encryptionSalt, encryptionIterations);
           toast.success('비밀번호 관리자가 잠금 해제되었습니다.');
           rateLimit.reset();
           setMasterPassword('');
@@ -395,7 +405,19 @@ export default function PasswordsPage() {
 
     if (passwordToCopy) {
       await navigator.clipboard.writeText(passwordToCopy);
-      toast.success('비밀번호가 클립보드에 복사되었습니다.');
+      toast.success('비밀번호가 클립보드에 복사되었습니다. 보안을 위해 30초 후 자동으로 삭제됩니다.');
+
+      // 30초 후 클립보드 자동 삭제 (보안 강화)
+      setTimeout(async () => {
+        try {
+          const currentClipboard = await navigator.clipboard.readText();
+          if (currentClipboard === passwordToCopy) {
+            await navigator.clipboard.writeText('');
+          }
+        } catch (error) {
+          // 클립보드 접근 권한 거부 등 무시
+        }
+      }, 30000);
     } else {
       toast.error('복사에 실패했습니다.');
     }
@@ -504,9 +526,9 @@ export default function PasswordsPage() {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-8">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold text-gray-900">비밀번호 관리</h1>
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6 sm:mb-8">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">비밀번호 관리</h1>
           <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full">
             <Unlock size={12} />
             잠금 해제됨
@@ -514,7 +536,7 @@ export default function PasswordsPage() {
         </div>
         <button
           onClick={() => setShowModal(true)}
-          className="btn btn-primary flex items-center gap-2"
+          className="btn btn-primary flex items-center justify-center gap-2 w-full sm:w-auto"
         >
           <Plus size={20} />
           추가
@@ -539,20 +561,20 @@ export default function PasswordsPage() {
         ) : (
           passwords.map((pw) => (
             <div key={pw.id} className="card">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <h3 className="font-semibold text-gray-900">{pw.service_name}</h3>
-                  <p className="text-sm text-gray-600 mt-1">{pw.username}</p>
+              <div className="flex items-start gap-2 sm:gap-4">
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-gray-900 break-words">{pw.service_name}</h3>
+                  <p className="text-sm text-gray-600 mt-1 break-all">{pw.username}</p>
 
-                  <div className="flex items-center gap-2 mt-2">
-                    <div className="flex-1 font-mono text-sm bg-gray-100 px-3 py-1.5 rounded">
+                  <div className="flex items-center gap-1 sm:gap-2 mt-2">
+                    <div className="flex-1 min-w-0 font-mono text-xs sm:text-sm bg-gray-100 px-2 sm:px-3 py-1.5 rounded truncate">
                       {visiblePasswords.has(pw.id)
                         ? pw.decryptedPassword || '***'
                         : '••••••••••••'}
                     </div>
                     <button
                       onClick={() => togglePasswordVisibility(pw.id)}
-                      className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
+                      className="p-1.5 sm:p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg flex-shrink-0"
                       title={visiblePasswords.has(pw.id) ? '숨기기' : '보기'}
                       aria-label={visiblePasswords.has(pw.id) ? '비밀번호 숨기기' : '비밀번호 보기'}
                     >
@@ -560,7 +582,7 @@ export default function PasswordsPage() {
                     </button>
                     <button
                       onClick={() => copyPassword(pw.id)}
-                      className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
+                      className="p-1.5 sm:p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg flex-shrink-0"
                       title="복사"
                       aria-label="비밀번호 복사"
                     >
@@ -573,21 +595,21 @@ export default function PasswordsPage() {
                       href={pw.website_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-sm text-primary-600 hover:underline mt-2 inline-flex items-center gap-1"
+                      className="text-sm text-primary-600 hover:underline mt-2 inline-flex items-center gap-1 break-all"
                     >
-                      {pw.website_url}
-                      <ExternalLink size={14} />
+                      <span className="truncate max-w-[200px] sm:max-w-none">{pw.website_url}</span>
+                      <ExternalLink size={14} className="flex-shrink-0" />
                     </a>
                   )}
 
                   {pw.notes && (
-                    <p className="text-sm text-gray-500 mt-2">{pw.notes}</p>
+                    <p className="text-sm text-gray-500 mt-2 break-words">{pw.notes}</p>
                   )}
                 </div>
 
                 <button
                   onClick={() => deletePassword(pw.id)}
-                  className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                  className="p-1.5 sm:p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg flex-shrink-0"
                   aria-label="삭제"
                 >
                   <Trash2 size={20} />

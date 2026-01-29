@@ -1,0 +1,401 @@
+================================================================================
+                    WORKSYNC CODE ANALYSIS REPORT
+                    Vercel 배포 상태 점검 및 모바일 웹 호환성 분석
+================================================================================
+
+분석 일자: 2026-01-28
+분석 대상: WorkSync Web Application (Next.js 14)
+배포 환경: Vercel
+
+================================================================================
+                           1. 종합 평가
+================================================================================
+
++-----------------------+--------+------------------+
+| 카테고리              | 점수   | 상태             |
++-----------------------+--------+------------------+
+| 모바일 웹 호환성      | 2/10   | CRITICAL         |
+| 보안                  | 8/10   | GOOD             |
+| 코드 품질             | 7/10   | MODERATE         |
+| 성능                  | 8/10   | GOOD             |
+| 전체                  | 6/10   | NEEDS WORK       |
++-----------------------+--------+------------------+
+
+결론: 데스크톱에서는 정상 작동하나, 모바일 웹에서는 사실상 사용 불가.
+      Sidebar 반응형 처리 및 전체 모바일 레이아웃 수정 필수.
+
+================================================================================
+                    2. 모바일 웹 호환성 문제 (CRITICAL)
+================================================================================
+
+[문제 2.1] Sidebar 고정 너비
+------------------------------------------------------------------------------
+위치: web/src/components/Sidebar.tsx:48
+심각도: CRITICAL
+
+현재 코드:
+  <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
+
+문제점:
+  - w-64 (256px) 고정 너비로 설정됨
+  - 모바일 화면(320px~428px)에서 사이드바가 화면의 60~80% 차지
+  - 콘텐츠 영역이 좁아 사용 불가능
+  - 햄버거 메뉴/토글 기능 없음
+
+권장 수정:
+  - 모바일: hidden + 햄버거 메뉴로 슬라이드 사이드바
+  - 태블릿: w-16 (아이콘만 표시)
+  - 데스크톱: w-64 (현재 유지)
+
+예시:
+  <aside className="hidden md:flex md:w-64 ...">  // 데스크톱
+  <aside className="fixed inset-0 z-50 md:hidden ...">  // 모바일 오버레이
+
+
+[문제 2.2] Dashboard Layout 고정 패딩
+------------------------------------------------------------------------------
+위치: web/src/app/(dashboard)/layout.tsx:20
+심각도: HIGH
+
+현재 코드:
+  <main className="flex-1 p-8 bg-gray-50">
+
+문제점:
+  - p-8 (32px) 패딩이 모바일에서 너무 큼
+  - 좁은 화면에서 콘텐츠 공간 부족
+
+권장 수정:
+  <main className="flex-1 p-4 md:p-6 lg:p-8 bg-gray-50">
+
+
+[문제 2.3] URL 페이지 폼 레이아웃
+------------------------------------------------------------------------------
+위치: web/src/app/(dashboard)/dashboard/urls/page.tsx:293-317
+심각도: HIGH
+
+현재 코드:
+  <div className="flex gap-4">
+    <div className="flex-1">
+      <input ... placeholder="URL 입력" />
+    </div>
+    <div className="w-48">
+      <input ... placeholder="제목 (선택)" />
+    </div>
+    <button type="submit" className="btn btn-primary">
+      추가
+    </button>
+  </div>
+
+문제점:
+  - 가로 flex 레이아웃이 모바일에서 깨짐
+  - w-48 고정 너비로 가로 스크롤 발생
+  - 버튼이 화면 밖으로 밀림
+
+권장 수정:
+  <div className="flex flex-col md:flex-row gap-4">
+    <div className="flex-1">
+      <input ... />
+    </div>
+    <div className="w-full md:w-48">
+      <input ... />
+    </div>
+    <button className="btn btn-primary w-full md:w-auto">
+      추가
+    </button>
+  </div>
+
+
+[문제 2.4] 반응형 브레이크포인트 미사용
+------------------------------------------------------------------------------
+위치: 전체 코드베이스
+심각도: CRITICAL
+
+문제점:
+  - Tailwind의 반응형 클래스(sm:, md:, lg:, xl:) 거의 미사용
+  - 데스크톱 우선(Desktop-first) 레이아웃으로만 구성
+  - 모바일 기기 대응 코드 없음
+
+영향받는 파일:
+  - web/src/components/Sidebar.tsx
+  - web/src/app/(dashboard)/layout.tsx
+  - web/src/app/(dashboard)/dashboard/urls/page.tsx
+  - web/src/app/(dashboard)/dashboard/passwords/page.tsx
+  - web/src/app/(dashboard)/dashboard/todos/page.tsx
+  - web/src/app/(dashboard)/dashboard/clipboard/page.tsx
+
+
+[문제 2.5] Viewport 메타 태그 누락
+------------------------------------------------------------------------------
+위치: web/src/app/layout.tsx
+심각도: MEDIUM
+
+현재 코드:
+  export const metadata: Metadata = {
+    title: 'WorkSync - Cross-Device Sync',
+    description: 'PC와 모바일 간의 데이터 연동 서비스',
+  };
+
+문제점:
+  - Next.js 14에서는 viewport를 별도로 export 해야 함
+  - 기본값이 적용되지만 명시적 설정 권장
+
+권장 수정:
+  export const viewport = {
+    width: 'device-width',
+    initialScale: 1,
+    maximumScale: 1,
+  };
+
+================================================================================
+                         3. 보안 분석 (GOOD)
+================================================================================
+
+[보안 3.1] 잘 구현된 보안 기능
+------------------------------------------------------------------------------
+
+(1) Content Security Policy (CSP)
+    위치: web/next.config.js:4-34
+    상태: IMPLEMENTED
+
+    적용된 정책:
+    - default-src 'self'
+    - frame-ancestors 'none' (클릭재킹 방지)
+    - X-Frame-Options: DENY
+    - X-Content-Type-Options: nosniff
+    - Referrer-Policy: strict-origin-when-cross-origin
+
+(2) Rate Limiting
+    위치: web/middleware.ts:10-58
+    상태: IMPLEMENTED
+
+    구현 방식:
+    - Primary: Upstash Redis 기반 (1분당 100회)
+    - Fallback: 인메모리 Rate Limiter
+    - API 요청에만 적용
+
+(3) CSRF 보호
+    위치: web/middleware.ts:67-95
+    상태: IMPLEMENTED
+
+    구현 방식:
+    - Origin 헤더와 Host 헤더 비교
+    - 불일치 시 403 Forbidden 반환
+    - 개발 환경 localhost 예외 처리
+
+(4) 암호화
+    위치: shared/utils/crypto.ts
+    상태: IMPLEMENTED
+
+    구현 방식:
+    - AES-256-GCM 암호화
+    - PBKDF2 키 파생 (100,000 iterations)
+    - 랜덤 IV 사용
+    - 인증 태그로 무결성 검증
+
+(5) 입력값 검증
+    위치: web/src/utils/sanitize.ts
+    상태: IMPLEMENTED
+
+    구현 방식:
+    - URL Sanitization (SSRF 방지)
+    - DOMPurify로 XSS 방지
+    - 내부 네트워크 주소 차단
+
+
+[보안 3.2] 개선 권장 사항
+------------------------------------------------------------------------------
+
+(1) CSP unsafe-eval/unsafe-inline
+    위치: web/next.config.js:9
+    심각도: LOW (AdSense 요구사항)
+
+    현재:
+    script-src 'self' 'unsafe-eval' 'unsafe-inline' ...
+
+    참고:
+    - Google AdSense 사용을 위해 필요
+    - 제거 시 광고 동작 안 함
+    - 가능하면 nonce 기반으로 전환 권장
+
+(2) 마스터 비밀번호 복구 불가
+    상태: BY DESIGN
+
+    현재 동작:
+    - 마스터 비밀번호 분실 시 저장된 비밀번호 복구 불가
+    - 사용자에게 경고 메시지 표시됨
+
+    권장:
+    - 복구 키 또는 백업 코드 시스템 고려
+
+================================================================================
+                       4. 코드 품질 문제 (MODERATE)
+================================================================================
+
+[품질 4.1] useEffect 의존성 배열 경고
+------------------------------------------------------------------------------
+위치: 여러 파일
+심각도: MEDIUM
+
+문제 코드 예시:
+
+(1) web/src/app/(dashboard)/dashboard/urls/page.tsx:42
+    useEffect(() => {
+      checkUser();
+    }, []);
+    // 경고: checkUser 의존성 누락
+
+(2) web/src/app/(dashboard)/dashboard/urls/page.tsx:85
+    useEffect(() => {
+      if (userId) { fetchUrls(); }
+    }, [userId, pagination.page, pagination.pageSize]);
+    // 경고: fetchUrls 의존성 누락
+
+권장 수정:
+    const checkUser = useCallback(async () => { ... }, []);
+    useEffect(() => { checkUser(); }, [checkUser]);
+
+
+[품질 4.2] confirm() 대신 ConfirmDialog 사용
+------------------------------------------------------------------------------
+위치: web/src/app/(dashboard)/dashboard/passwords/page.tsx:344
+심각도: MEDIUM
+
+현재 코드:
+  if (!confirm('정말 삭제하시겠습니까?')) return;
+
+문제점:
+  - 네이티브 confirm()은 모바일 UX 좋지 않음
+  - 스타일링 불가
+  - 일관성 없는 UI
+
+권장 수정:
+  - urls/page.tsx처럼 ConfirmDialog 컴포넌트 사용
+  - 이미 프로젝트에 ConfirmDialog 구현되어 있음
+
+
+[품질 4.3] Supabase 클라이언트 중복 생성
+------------------------------------------------------------------------------
+위치: 각 페이지 컴포넌트
+심각도: LOW
+
+현재 패턴:
+  export default function UrlsPage() {
+    const supabase = createClient();  // 렌더링마다 호출
+    ...
+  }
+
+참고:
+  - createClient()가 내부적으로 싱글톤 패턴 사용 시 문제 없음
+  - 확인 필요
+
+================================================================================
+                         5. 성능 분석 (GOOD)
+================================================================================
+
+[성능 5.1] 잘 구현된 성능 최적화
+------------------------------------------------------------------------------
+
++------------------------+------------+--------------------------------+
+| 기능                   | 상태       | 위치                           |
++------------------------+------------+--------------------------------+
+| Skeleton 로딩          | IMPLEMENTED| components/Skeleton.tsx        |
+| 페이지네이션           | IMPLEMENTED| hooks/usePagination.ts         |
+| 낙관적 업데이트        | IMPLEMENTED| urls/page.tsx, passwords/page  |
+| 이미지 최적화          | CONFIGURED | next.config.js                 |
+| 코드 스플리팅          | AUTO       | Next.js App Router             |
+| Realtime 구독          | IMPLEMENTED| 각 페이지 useEffect            |
++------------------------+------------+--------------------------------+
+
+
+[성능 5.2] 개선 가능 사항
+------------------------------------------------------------------------------
+
+(1) 페이지네이션 기본값
+    현재: 20개 항목/페이지
+    모바일 권장: 10개 항목/페이지 (반응형 조정)
+
+(2) Realtime 구독 정리
+    상태: 구현됨 (cleanup 함수 있음)
+
+(3) 이미지 Lazy Loading
+    상태: Next.js Image 컴포넌트 사용 시 자동 적용
+
+================================================================================
+                      6. 권장 수정 우선순위
+================================================================================
+
+[우선순위 1] CRITICAL - 즉시 수정 필요
+------------------------------------------------------------------------------
+
+1. 반응형 Sidebar 구현
+   예상 작업:
+   - 모바일용 햄버거 메뉴 버튼 추가
+   - useState로 사이드바 열림/닫힘 상태 관리
+   - 모바일: 오버레이 슬라이드 사이드바
+   - 태블릿/데스크톱: 고정 사이드바
+
+   영향 파일:
+   - web/src/components/Sidebar.tsx
+   - web/src/app/(dashboard)/layout.tsx
+
+2. 반응형 레이아웃 적용
+   예상 작업:
+   - 모든 페이지에 반응형 브레이크포인트 추가
+   - 패딩/마진 모바일 최적화
+   - 폼 레이아웃 세로 스택 (모바일)
+
+   영향 파일:
+   - web/src/app/(dashboard)/layout.tsx
+   - web/src/app/(dashboard)/dashboard/*/page.tsx
+   - web/src/app/globals.css
+
+3. Viewport 메타 태그 추가
+   영향 파일:
+   - web/src/app/layout.tsx
+
+
+[우선순위 2] HIGH - 조기 수정 권장
+------------------------------------------------------------------------------
+
+4. confirm() -> ConfirmDialog 교체
+   영향 파일:
+   - web/src/app/(dashboard)/dashboard/passwords/page.tsx
+
+5. useEffect 의존성 수정
+   영향 파일:
+   - web/src/app/(dashboard)/dashboard/urls/page.tsx
+   - web/src/app/(dashboard)/dashboard/passwords/page.tsx
+
+
+[우선순위 3] MEDIUM - 시간 여유 있을 때 수정
+------------------------------------------------------------------------------
+
+6. 모바일용 페이지네이션 크기 조정
+7. 터치 친화적 버튼 크기 (최소 44x44px)
+8. 모바일 AdSense 배너 위치 조정
+
+================================================================================
+                         7. 테스트 권장 사항
+================================================================================
+
+모바일 웹 호환성 테스트 체크리스트:
+
+[ ] iPhone SE (375px) - 가장 작은 현대 스마트폰
+[ ] iPhone 14 (390px)
+[ ] iPhone 14 Pro Max (430px)
+[ ] Samsung Galaxy S21 (360px)
+[ ] iPad Mini (768px)
+[ ] iPad Pro (1024px)
+
+테스트 항목:
+[ ] 사이드바 표시/숨김 정상 동작
+[ ] 메뉴 항목 터치 가능
+[ ] 폼 입력 필드 터치 가능
+[ ] 버튼 터치 영역 충분
+[ ] 가로 스크롤 없음
+[ ] 텍스트 읽기 가능 (폰트 크기)
+[ ] 모달/다이얼로그 정상 표시
+
+================================================================================
+                              END OF REPORT
+================================================================================

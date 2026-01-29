@@ -6,7 +6,7 @@
   "expo": {
     "name": "WorkSync Mobile",
     "slug": "worksync-mobile-2026",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "scheme": "worksync",
     "userInterfaceStyle": "light",
@@ -29,7 +29,7 @@
     },
     "android": {
       "package": "com.worksync.app",
-      "versionCode": 1,
+      "versionCode": 2,
       "adaptiveIcon": {
         "backgroundColor": "#3B82F6"
       },
@@ -72,7 +72,7 @@
           "cameraPermission": "카메라로 사진과 동영상을 촬영할 수 있습니다."
         }
       ],
-      "expo-av",
+      "expo-video",
       [
         "expo-media-library",
         {

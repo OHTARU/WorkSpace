@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 
 // 베타 버전: 모든 기능 무제한 사용 가능
 // 출시 시 false로 변경
-const BETA_MODE = true;
+const BETA_MODE = false;
 
 import type {
   Subscription,
@@ -96,9 +96,20 @@ export function useSubscription(): UseSubscriptionReturn {
         usageMap[item.feature] = item as UsageTracking;
       });
 
+      // 베타 모드일 경우 플랜의 모든 제한을 무제한(-1)으로 설정
+      const finalPlan = BETA_MODE && currentPlan 
+        ? {
+            ...currentPlan,
+            limits: Object.keys(currentPlan.limits).reduce((acc, key) => ({
+              ...acc,
+              [key]: -1
+            }), {} as PlanLimits)
+          }
+        : currentPlan;
+
       setState({
         subscription: currentSubscription,
-        plan: currentPlan,
+        plan: finalPlan,
         usage: usageMap,
         isLoading: false,
         error: null,
@@ -140,12 +151,13 @@ export function useSubscription(): UseSubscriptionReturn {
   // 사용량 제한 체크
   const checkLimit = useCallback(
     (feature: keyof PlanLimits) => {
+      const { plan, usage } = state;
+      const current = usage[feature]?.current_count || 0;
+
       // 베타 모드: 모든 기능 무제한
       if (BETA_MODE) {
-        return { allowed: true, current: 0, limit: -1, remaining: -1 };
+        return { allowed: true, current, limit: -1, remaining: -1 };
       }
-
-      const { plan, usage } = state;
 
       // 플랜 정보가 로딩되지 않았으면 일단 차단 (안전하게)
       if (!plan) {
@@ -153,7 +165,6 @@ export function useSubscription(): UseSubscriptionReturn {
       }
 
       const limit = (plan.limits[feature] ?? 0) as number;
-      const current = usage[feature]?.current_count || 0;
 
       // -1은 무제한
       if (limit === -1) {

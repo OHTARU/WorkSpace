@@ -15,6 +15,7 @@ const FEATURE_LABELS: Record<string, string> = {
   urls: 'URL',
   passwords: '비밀번호',
   projects: '프로젝트',
+  todos: '할일',
   clipboards: '클립보드',
 };
 

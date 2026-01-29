@@ -7,6 +7,7 @@ export interface Profile {
   avatar_url: string | null;
   created_at: string;
   updated_at: string;
+  is_admin?: boolean;
 }
 
 export interface Url {
@@ -143,6 +144,7 @@ export interface PlanLimits {
   urls: number;           // -1 = 무제한
   passwords: number;
   projects: number;
+  todos: number;
   clipboards: number;
   devices: number;
   clipboard_history_days: number;

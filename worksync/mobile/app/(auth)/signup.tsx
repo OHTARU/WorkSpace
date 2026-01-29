@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useRouter, Link } from 'expo-router';
 import { useAuth } from '../../src/contexts/AuthContext';
+import { validateMasterPassword } from '../../src/utils/validation';
 
 export default function SignupScreen() {
   const [email, setEmail] = useState('');
@@ -31,8 +32,9 @@ export default function SignupScreen() {
       return;
     }
 
-    if (password.length < 6) {
-      Alert.alert('오류', '비밀번호는 최소 6자 이상이어야 합니다.');
+    const validation = validateMasterPassword(password);
+    if (!validation.isValid) {
+      Alert.alert('오류', validation.message || '비밀번호 형식이 올바르지 않습니다.');
       return;
     }
 

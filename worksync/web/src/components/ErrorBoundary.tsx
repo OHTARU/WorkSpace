@@ -59,6 +59,14 @@ export class ErrorBoundary extends React.Component<
     });
   };
 
+  handleReport = () => {
+    const errorDetails = `Error: ${this.state.error?.toString()}\n\nStack: ${this.state.errorInfo?.componentStack}`;
+    const mailtoUrl = `mailto:support@worksync.app?subject=Web Bug Report&body=${encodeURIComponent(
+      errorDetails
+    )}`;
+    window.location.href = mailtoUrl;
+  };
+
   render() {
     if (this.state.hasError) {
       // 커스텀 fallback UI가 제공된 경우
@@ -130,6 +138,18 @@ export class ErrorBoundary extends React.Component<
                   className="px-6 py-2.5 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors font-medium"
                 >
                   홈으로 이동
+                </button>
+              </div>
+
+              <div className="mt-6 pt-6 border-t border-gray-100">
+                <button
+                  onClick={this.handleReport}
+                  className="text-sm text-gray-500 hover:text-primary-600 hover:underline flex items-center justify-center gap-1 mx-auto"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                  오류 보고하기 (이메일)
                 </button>
               </div>
             </div>

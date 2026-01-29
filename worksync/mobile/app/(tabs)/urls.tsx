@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import {
   View,
   Text,
-  FlatList,
   TouchableOpacity,
   StyleSheet,
   RefreshControl,
@@ -10,6 +9,7 @@ import {
   Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { FlashList } from '@shopify/flash-list';
 import * as Clipboard from 'expo-clipboard';
 import { supabase } from '../../src/lib/supabase';
 import { useAuth } from '../../src/contexts/AuthContext';
@@ -154,10 +154,11 @@ export default function UrlsScreen() {
 
   return (
     <View style={styles.container}>
-      <FlatList
+      <FlashList
         data={urls}
         renderItem={renderItem}
         keyExtractor={(item) => item.id}
+        estimatedItemSize={88}
         contentContainerStyle={styles.list}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={() => {

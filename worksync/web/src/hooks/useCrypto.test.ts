@@ -55,13 +55,13 @@ describe('useCrypto', () => {
         await result.current.unlock(mockPassword, mockUserId);
       });
 
-      let encrypted: { encrypted: string; iv: string } | null = null;
+      let encrypted: { ciphertext: string; iv: string } | null = null;
       await act(async () => {
         encrypted = await result.current.encrypt(mockPlaintext);
       });
 
       expect(encrypted).not.toBeNull();
-      expect(encrypted?.encrypted).toBeTruthy();
+      expect(encrypted?.ciphertext).toBeTruthy();
       expect(encrypted?.iv).toBeTruthy();
     });
   });
@@ -88,7 +88,7 @@ describe('useCrypto', () => {
     it('잠금 상태에서 암호화 불가', async () => {
       const { result } = renderHook(() => useCrypto());
 
-      let encrypted: { encrypted: string; iv: string } | null = null;
+      let encrypted: { ciphertext: string; iv: string } | null = null;
       await act(async () => {
         encrypted = await result.current.encrypt(mockPlaintext);
       });
@@ -103,14 +103,14 @@ describe('useCrypto', () => {
         await result.current.unlock(mockPassword, mockUserId);
       });
 
-      let encrypted: { encrypted: string; iv: string } | null = null;
+      let encrypted: { ciphertext: string; iv: string } | null = null;
       await act(async () => {
         encrypted = await result.current.encrypt(mockPlaintext);
       });
 
       expect(encrypted).not.toBeNull();
       // Base64 형식 검증
-      expect(() => atob(encrypted!.encrypted)).not.toThrow();
+      expect(() => atob(encrypted!.ciphertext)).not.toThrow();
       expect(() => atob(encrypted!.iv)).not.toThrow();
     });
   });
@@ -134,7 +134,7 @@ describe('useCrypto', () => {
         await result.current.unlock(mockPassword, mockUserId);
       });
 
-      let encrypted: { encrypted: string; iv: string } | null = null;
+      let encrypted: { ciphertext: string; iv: string } | null = null;
       await act(async () => {
         encrypted = await result.current.encrypt(mockPlaintext);
       });
@@ -142,7 +142,7 @@ describe('useCrypto', () => {
       let decrypted: string | null = null;
       await act(async () => {
         decrypted = await result.current.decrypt(
-          encrypted!.encrypted,
+          encrypted!.ciphertext,
           encrypted!.iv
         );
       });
@@ -159,7 +159,7 @@ describe('useCrypto', () => {
         await result.current.unlock(mockPassword, mockUserId);
       });
 
-      let encrypted: { encrypted: string; iv: string } | null = null;
+      let encrypted: { ciphertext: string; iv: string } | null = null;
       await act(async () => {
         encrypted = await result.current.encrypt('test-value');
       });
@@ -169,7 +169,7 @@ describe('useCrypto', () => {
         isValid = await result.current.verifyMasterPassword(
           mockPassword,
           mockUserId,
-          encrypted!.encrypted,
+          encrypted!.ciphertext,
           encrypted!.iv,
           mockPlaintext // mock은 항상 mockPlaintext 반환
         );
@@ -255,8 +255,8 @@ describe('useCrypto', () => {
         await result.current.unlock(mockPassword, mockUserId);
       });
 
-      let encrypted1: { encrypted: string; iv: string } | null = null;
-      let encrypted2: { encrypted: string; iv: string } | null = null;
+      let encrypted1: { ciphertext: string; iv: string } | null = null;
+      let encrypted2: { ciphertext: string; iv: string } | null = null;
 
       await act(async () => {
         encrypted1 = await result.current.encrypt(mockPlaintext);

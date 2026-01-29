@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { logger } from '@/lib/logger';
 
 interface RateLimitConfig {
@@ -38,7 +38,14 @@ export function useRateLimit(
   key: string,
   config: Partial<RateLimitConfig> = {}
 ) {
-  const fullConfig = { ...DEFAULT_CONFIG, ...config };
+  const { maxAttempts, windowMs, blockDurationMs } = config;
+
+  const fullConfig = useMemo(() => ({
+    maxAttempts: maxAttempts ?? DEFAULT_CONFIG.maxAttempts,
+    windowMs: windowMs ?? DEFAULT_CONFIG.windowMs,
+    blockDurationMs: blockDurationMs ?? DEFAULT_CONFIG.blockDurationMs,
+  }), [maxAttempts, windowMs, blockDurationMs]);
+
   const storageKey = `rate_limit_${key}`;
 
   const [state, setState] = useState<RateLimitState>(() => {
