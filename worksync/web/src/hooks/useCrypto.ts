@@ -89,7 +89,7 @@ export function useCrypto() {
     // 1. 비밀번호를 키 재료로 변환
     const keyMaterial = await crypto.subtle.importKey(
       'raw',
-      stringToBytes(password),
+      stringToBytes(password) as any,
       { name: 'PBKDF2' },
       false,
       ['deriveBits', 'deriveKey']
@@ -99,7 +99,7 @@ export function useCrypto() {
     return await crypto.subtle.deriveKey(
       {
         name: 'PBKDF2',
-        salt: salt,
+        salt: salt as any,
         iterations: iterations,
         hash: 'SHA-256'
       },
@@ -167,7 +167,7 @@ export function useCrypto() {
           iv: iv
         },
         cryptoKey,
-        stringToBytes(plaintext)
+        stringToBytes(plaintext) as any
       );
 
       // 3. 결과 반환 (Base64 인코딩)
@@ -197,10 +197,10 @@ export function useCrypto() {
       const decryptedBuffer = await crypto.subtle.decrypt(
         {
           name: 'AES-GCM',
-          iv: iv
+          iv: iv as any
         },
         cryptoKey,
-        encryptedData
+        encryptedData as any
       );
 
       return bytesToString(decryptedBuffer);
@@ -231,10 +231,10 @@ export function useCrypto() {
       const decryptedBuffer = await crypto.subtle.decrypt(
         {
           name: 'AES-GCM',
-          iv: iv
+          iv: iv as any
         },
         tempKey,
-        encryptedData
+        encryptedData as any
       );
 
       const decryptedText = bytesToString(decryptedBuffer);

@@ -37,8 +37,9 @@ global.TextEncoder = class TextEncoder {
 } as any;
 
 global.TextDecoder = class TextDecoder {
-  decode(arr: Uint8Array): string {
-    return String.fromCharCode.apply(null, Array.from(arr));
+  decode(arr: ArrayBuffer | ArrayBufferView): string {
+    const uint8 = arr instanceof Uint8Array ? arr : new Uint8Array(arr as ArrayBuffer);
+    return String.fromCharCode.apply(null, Array.from(uint8));
   }
 } as any;
 
