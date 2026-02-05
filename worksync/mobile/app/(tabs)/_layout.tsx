@@ -1,14 +1,10 @@
 import { View, StyleSheet } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { BannerAd } from '../../src/components/BannerAd';
 
 export default function TabLayout() {
   return (
     <View style={styles.container}>
-      <View style={styles.adContainer}>
-        <BannerAd />
-      </View>
       <Tabs
         screenOptions={{
           tabBarActiveTintColor: '#3B82F6',
@@ -91,11 +87,5 @@ export default function TabLayout() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  adContainer: {
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    paddingVertical: 4,
   },
 });

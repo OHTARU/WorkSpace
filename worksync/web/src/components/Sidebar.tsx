@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useSubscription } from '@/hooks/useSubscription';
-import { AdSenseBanner } from './AdSenseBanner';
 import {
   Link2,
   Lock,
@@ -110,13 +109,6 @@ export default function Sidebar({ user, isOpen = false, onClose }: SidebarProps)
             );
           })}
         </nav>
-
-        {/* 광고 배너 */}
-        {!isPro && (
-          <div className="px-4 pb-4 hidden lg:block">
-            <AdSenseBanner />
-          </div>
-        )}
 
         {/* 로그아웃 버튼 */}
         <div className="p-4 border-t border-gray-200">

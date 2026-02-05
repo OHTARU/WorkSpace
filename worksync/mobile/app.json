@@ -1,8 +1,4 @@
 {
-  "react-native-google-mobile-ads": {
-    "android_app_id": "ca-app-pub-5539584331662815~4452343646",
-    "ios_app_id": "ca-app-pub-5539584331662815~4452343646"
-  },
   "expo": {
     "name": "WorkSync Mobile",
     "slug": "worksync-mobile-2026",
@@ -55,13 +51,6 @@
       "output": "static"
     },
     "plugins": [
-      [
-        "react-native-google-mobile-ads",
-        {
-          "androidAppId": "ca-app-pub-5539584331662815~4452343646",
-          "iosAppId": "ca-app-pub-5539584331662815~4452343646"
-        }
-      ],
       "expo-router",
       "expo-secure-store",
       "expo-local-authentication",

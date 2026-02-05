@@ -21,7 +21,6 @@ import { VideoView, useVideoPlayer } from 'expo-video';
 import { supabase } from '../../src/lib/supabase';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { useSubscription } from '../../src/hooks/useSubscription';
-import { useInterstitialAd } from '../../src/hooks/useInterstitialAd';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const { width: screenWidth } = Dimensions.get('window');
@@ -61,7 +60,6 @@ export default function ClipboardScreen() {
   const [saving, setSaving] = useState<string | null>(null);
   const { user } = useAuth();
   const { checkLimit } = useSubscription();
-  const { showAd, isLoaded } = useInterstitialAd();
 
   useEffect(() => {
     fetchClipboards();
@@ -296,11 +294,6 @@ export default function ClipboardScreen() {
 
   const saveMedia = async (item: ClipboardItem) => {
     if (!item.media_url) return;
-
-    // 광고 표시 (로드된 경우)
-    if (isLoaded) {
-      showAd();
-    }
 
     setSaving(item.id);
     try {

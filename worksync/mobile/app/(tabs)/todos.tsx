@@ -19,7 +19,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../src/lib/supabase';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { useSubscription } from '../../src/hooks/useSubscription';
-import { useInterstitialAd } from '../../src/hooks/useInterstitialAd';
 
 interface Project {
   id: string;
@@ -66,7 +65,6 @@ export default function TodosScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const { user } = useAuth();
   const { checkLimit } = useSubscription();
-  const { showAd, isLoaded } = useInterstitialAd();
 
   // 프로젝트 모달
   const [showProjectModal, setShowProjectModal] = useState(false);
@@ -203,11 +201,6 @@ export default function TodosScreen() {
           [{ text: '확인', style: 'cancel' }]
         );
         return;
-      }
-
-      // 광고 표시 (로드된 경우)
-      if (isLoaded) {
-        showAd();
       }
     }
 

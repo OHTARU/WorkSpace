@@ -5,7 +5,6 @@ import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
-import { AdSenseBanner } from '@/components/AdSenseBanner';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -88,10 +87,6 @@ export default function LoginPage() {
             회원가입
           </Link>
         </p>
-      </div>
-
-      <div className="w-full max-w-md mt-4">
-        <AdSenseBanner />
       </div>
     </div>
   );
