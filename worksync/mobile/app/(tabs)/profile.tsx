@@ -49,7 +49,8 @@ export default function ProfileScreen() {
       .from('profiles')
       .select('*')
       .eq('id', user.id)
-      .single();
+      .limit(1)
+      .maybeSingle();
 
     if (error) {
       console.error('Profile fetch error:', error);
