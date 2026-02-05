@@ -26,9 +26,7 @@ export function validateEnv(): void {
   if (!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
     missing.push('NEXT_PUBLIC_SUPABASE_ANON_KEY');
   }
-  if (!process.env.STRIPE_SECRET_KEY) {
-    missing.push('STRIPE_SECRET_KEY');
-  }
+  // STRIPE_SECRET_KEY는 결제 시스템 활성화 전까지는 선택 사항으로 변경
 
   if (missing.length > 0) {
     throw new Error(
@@ -48,13 +46,13 @@ export const env = {
     return checkValue(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, 'NEXT_PUBLIC_SUPABASE_ANON_KEY');
   },
   get STRIPE_SECRET_KEY(): string {
-    return checkValue(process.env.STRIPE_SECRET_KEY, 'STRIPE_SECRET_KEY');
+    return process.env.STRIPE_SECRET_KEY || '';
   },
   get STRIPE_PUBLISHABLE_KEY(): string {
-    return checkValue(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY, 'NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY');
+    return process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
   },
   get STRIPE_WEBHOOK_SECRET(): string {
-    return checkValue(process.env.STRIPE_WEBHOOK_SECRET, 'STRIPE_WEBHOOK_SECRET');
+    return process.env.STRIPE_WEBHOOK_SECRET || '';
   },
   get NEXT_URL(): string {
     return process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
